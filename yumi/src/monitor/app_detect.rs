@@ -54,14 +54,14 @@ fn get_system_ime_packages() -> HashSet<String> {
                 let clean_pkg = pkg.trim();
                 if !clean_pkg.is_empty() {
                     imes.insert(clean_pkg.to_string());
-                    debug!("Auto-detected IME: {}", clean_pkg);
+                    debug!("{}", t_with_args("app-detect-ime-auto", &fluent_args!("pkg" => clean_pkg)));
                 }
             }
         }
     }
     
     if imes.is_empty() {
-        warn!("Failed to auto-detect IME, using fallback list.");
+        warn!("{}", t("app-detect-ime-fallback"));
         imes.insert("com.sohu.inputmethod.sogou.xiaomi".to_string());
         imes.insert("com.sohu.inputmethod.sogouoem".to_string());
         imes.insert("com.google.android.inputmethod.latin".to_string());
@@ -247,7 +247,6 @@ pub fn app_detection_loop(
         if current_screen_state != last_screen_state {
             info!("{}", t_with_args("app-detect-screen-changed", &fluent_args!("old" => last_screen_state.to_string(), "new" => current_screen_state.to_string())));
             last_screen_state = current_screen_state;
-            let _ = tx.send(DaemonEvent::ScreenStateChange(current_screen_state));
             if current_screen_state {
                 last_package.clear();
                 pending_package.clear();

@@ -26,9 +26,12 @@ use crate::common::DaemonEvent;
 use crate::monitor::app_detect;
 use log::{info, debug};
 
+use crate::i18n::{t, t_with_args};
+use crate::fluent_args;
+
 pub async fn start_fps_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error> {
     static BPF_DATA: &[u8] = include_bytes_aligned!(env!("BPF_FPS_OBJ_PATH"));
-    info!("Initializing eBPF FPS monitor...");
+    info!("{}", t("fps-monitor-init"));
 
     let bpf = Box::leak(Box::new(Ebpf::load(BPF_DATA)?));
     let program: &mut UProbe = bpf.program_mut("handle_frame").unwrap().try_into()?;
@@ -44,13 +47,13 @@ pub async fn start_fps_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
     let mut attached_count = 0;
     for sym in syms {
         if program.attach(Some(sym), 0, "/system/lib64/libgui.so", None).is_ok() {
-            info!("Attached uprobe to symbol: {}", sym);
+            info!("{}", t_with_args("fps-monitor-attached", &fluent_args!("sym" => sym)));
             attached_count += 1;
         }
     }
 
     if attached_count == 0 {
-        return Err(anyhow::anyhow!("Failed to attach any Uprobe symbols!"));
+        return Err(anyhow::anyhow!("{}", t("fps-monitor-attach-failed")));
     }
 
     let bpf_ptr = bpf as *mut Ebpf;
@@ -79,7 +82,7 @@ pub async fn start_fps_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
                     pid_arc.store(current_pid, Ordering::Relaxed);
                     if let Some(arr) = &mut target_pid_arr {
                         let _ = arr.set(0, current_pid, 0);
-                        debug!("Updated kernel PID filter: {} → {}", last_pid, current_pid);
+                        debug!("{}", t_with_args("fps-monitor-pid-filter-updated", &fluent_args!("old" => last_pid.to_string(), "new" => current_pid.to_string())));
                     }
                     last_pid = current_pid;
                 }
@@ -130,8 +133,7 @@ pub async fn start_fps_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
         });
     }
 
-    info!("eBPF FPS monitor started successfully (kernel PID filter: {}).",
-        if has_kernel_filter { "active" } else { "disabled" });
+    info!("{}", t_with_args("fps-monitor-started", &fluent_args!("filter" => if has_kernel_filter { "active" } else { "disabled" })));
     
     std::future::pending::<()>().await;
     Ok(())

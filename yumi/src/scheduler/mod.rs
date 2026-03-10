@@ -155,7 +155,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
                     if clg_cfg.enabled {
                         cpu_governor.init_policies(&clg_cfg);
-                        log::info!("CPU Load Governor: initialized at startup (mode={})", current_mode);
+                        log::info!("{}", t_with_args("scheduler-clg-init", &fluent_args!("mode" => current_mode.clone())));
                     }
                 }
             }
@@ -168,7 +168,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         let current_mode = mode_clone.lock().unwrap().clone();
 
                         if !is_screen_on {
-                            log::info!("Screen OFF: Enabling Extreme Doze mode (Restricting CPU max performance).");
+                            log::info!("{}", t("scheduler-doze-enable"));
                             
                             // 息屏立刻剥夺 FAS 的频率控制权
                             if current_mode == "fas" {
@@ -190,7 +190,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             
                             cpu_governor.init_policies(&doze_cfg);
                         } else {
-                            log::info!("Screen ON: Restoring previous performance constraints.");
+                            log::info!("{}", t("scheduler-doze-restore"));
                             
                             let config_lock = config_clone.read().unwrap();
                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);

@@ -24,6 +24,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use log::{info, warn};
 
+use crate::i18n::{t, t_with_args};
+use crate::fluent_args;
+
 // ════════════════════════════════════════════════════════════════
 //  FastWriter — 带去重 + unmount 的 sysfs 写入器
 // ════════════════════════════════════════════════════════════════
@@ -41,7 +44,7 @@ impl FastWriter {
         Self::try_unmount(path_ref);
         let _ = crate::utils::enable_perm(path_ref);
         let file = OpenOptions::new().write(true).open(path_ref)
-            .map_err(|e| log::error!("FAS: failed to open {}: {}", path_ref.display(), e))
+            .map_err(|e| log::error!("{}", t_with_args("fas-open-failed", &fluent_args!("path" => path_ref.display().to_string(), "error" => e.to_string()))))
             .ok();
         Self { file, last_value: None, buf: [0u8; 20], path: path_ref.to_path_buf() }
     }
@@ -54,7 +57,7 @@ impl FastWriter {
                     let errno = std::io::Error::last_os_error();
                     if errno.raw_os_error() != Some(libc::EINVAL)
                         && errno.raw_os_error() != Some(libc::ENOENT) {
-                        log::debug!("FAS: umount2({}) = {}", path_str, errno);
+                        log::debug!("{}", t_with_args("fas-umount2-failed", &fluent_args!("path" => path_str, "error" => errno.to_string())));
                     }
                 }
             }
@@ -81,7 +84,7 @@ impl FastWriter {
             let len = Self::u32_to_buf(value, &mut self.buf);
             let _ = file.seek(SeekFrom::Start(0));
             if let Err(e) = file.write_all(&self.buf[..len]) {
-                log::error!("FAS: write freq {} failed: {}", value, e);
+                log::error!("{}", t_with_args("fas-write-freq-failed", &fluent_args!("freq" => value.to_string(), "error" => e.to_string())));
             }
             self.last_value = Some(value);
         }
@@ -204,8 +207,12 @@ impl PolicyController {
                     let max_ok = self.available_freqs.iter()
                         .find(|&&f| f >= expected).copied().unwrap_or(expected);
                     if actual < min_ok || actual > max_ok {
-                        warn!("FAS[P{}]: freq mismatch! expected {}-{}, actual {} → emergency reapply",
-                            self.policy_id, min_ok, max_ok, actual);
+                        warn!("{}", t_with_args("fas-freq-mismatch", &fluent_args!(
+                            "pid" => self.policy_id.to_string(),
+                            "min" => min_ok.to_string(),
+                            "max" => max_ok.to_string(),
+                            "actual" => actual.to_string()
+                        )));
                         self.max_writer.re_unmount();
                         self.min_writer.re_unmount();
                         self.max_writer.invalidate();
@@ -647,7 +654,11 @@ impl FasController {
         self.downgrade_boost_active = false;
         self.downgrade_boost_remaining = 0;
         self.floor_stuck_frames = 0;
-        info!("FAS: gear {:.0} -> {:.0}fps | P -> {:.2}", old, new_fps, final_perf);
+        info!("{}", t_with_args("fas-gear-switch", &fluent_args!(
+            "old" => format!("{:.0}", old),
+            "new" => format!("{:.0}", new_fps),
+            "perf" => format!("{:.2}", final_perf)
+        )));
     }
 
     fn reset_runtime(&mut self) {
@@ -714,11 +725,16 @@ impl FasController {
                     self.refresh_cached_values();
                 }
             }
-            info!("FAS: set_game | pkg={} | gears={:?} | target={:.0}fps",
-                package, self.fps_gears, self.current_target_fps);
+            info!("{}", t_with_args("fas-set-game", &fluent_args!(
+                "pkg" => package,
+                "gears" => format!("{:?}", self.fps_gears),
+                "target" => format!("{:.0}", self.current_target_fps)
+            )));
         } else {
-            warn!("FAS: no per-app profile for '{}', using global gears {:?}",
-                package, self.fps_gears);
+            warn!("{}", t_with_args("fas-no-profile", &fluent_args!(
+                "pkg" => package,
+                "gears" => format!("{:?}", self.fps_gears)
+            )));
         }
         self.active_profile = profile;
     }
@@ -743,7 +759,7 @@ impl FasController {
         for p in &mut self.policies {
             if p.policy_id == policy_id {
                 p.ignore_write = ignore;
-                info!("FAS[P{}] ignore_write = {}", policy_id, ignore);
+                info!("{}", t_with_args("fas-ignore-write", &fluent_args!("pid" => policy_id.to_string(), "ignore" => ignore.to_string())));
             }
         }
     }
@@ -801,8 +817,11 @@ impl FasController {
             || (old_kd - new_rules.pid.kd).abs() > 0.001
         {
             self.pid.update_coefficients(new_rules.pid.kp, new_rules.pid.ki, new_rules.pid.kd);
-            info!("FAS: PID coefficients hot-reloaded: Kp={:.4} Ki={:.4} Kd={:.4}",
-                new_rules.pid.kp, new_rules.pid.ki, new_rules.pid.kd);
+            info!("{}", t_with_args("fas-pid-reloaded", &fluent_args!(
+                "kp" => format!("{:.4}", new_rules.pid.kp),
+                "ki" => format!("{:.4}", new_rules.pid.ki),
+                "kd" => format!("{:.4}", new_rules.pid.kd)
+            )));
         }
 
         // 更新当前应用的 profile
@@ -845,9 +864,12 @@ impl FasController {
         self.temp_threshold = new_rules.core_temp_threshold;
         self.refresh_cached_values();
 
-        info!("FAS: rules hot-reloaded (margin={:.1}, floor={:.2}, ceil={:.2}, profiles={})",
-            self.fps_margin, self.cfg.perf_floor, self.cfg.perf_ceil,
-            self.cfg.per_app_profiles.len());
+        info!("{}", t_with_args("fas-rules-reloaded", &fluent_args!(
+            "margin" => format!("{:.1}", self.fps_margin),
+            "floor" => format!("{:.2}", self.cfg.perf_floor),
+            "ceil" => format!("{:.2}", self.cfg.perf_ceil),
+            "profiles" => self.cfg.per_app_profiles.len().to_string()
+        )));
     }
 
     // ════════════════════════════════════════════════════════════
@@ -937,9 +959,13 @@ impl FasController {
 
         let auto_w = if fas_rules.auto_capacity_weight {
             auto_compute_capacity_weights(&clusters).map(|w| {
-                info!("FAS: auto capacity:");
+                info!("{}", t("fas-auto-capacity"));
                 for &(pid, wt) in &w {
-                    info!("  P{}: cap={} → w={:.2}", pid, probe_policy_capacity(pid).unwrap_or(0), wt);
+                    info!("{}", t_with_args("fas-auto-capacity-core", &fluent_args!(
+                        "pid" => pid.to_string(),
+                        "cap" => probe_policy_capacity(pid).unwrap_or(0).to_string(),
+                        "weight" => format!("{:.2}", wt)
+                    )));
                 }
                 w
             })
@@ -972,7 +998,12 @@ impl FasController {
                 .map(|&(_, w)| ClusterProfile { capacity_weight: w })
                 .unwrap_or_else(|| fas_rules.cluster_profiles.get(idx).cloned().unwrap_or_default());
 
-            info!("FAS[P{}] {}-{} MHz | w={:.2}", pid, freqs.first().unwrap()/1000, max_f/1000, profile.capacity_weight);
+            info!("{}", t_with_args("fas-policy-init", &fluent_args!(
+                "pid" => pid.to_string(),
+                "min" => (freqs.first().unwrap()/1000).to_string(),
+                "max" => (max_f/1000).to_string(),
+                "weight" => format!("{:.2}", profile.capacity_weight)
+            )));
 
             self.policies.push(PolicyController::new(mw, nw, freqs, pid as usize, profile, max_f));
         }
@@ -985,7 +1016,13 @@ impl FasController {
         self.temp_threshold = fas_rules.core_temp_threshold;
         self.apply_freqs();
 
-        info!("FAS init | {:.0}fps clusters:{} P:{:.2}", self.current_target_fps, self.policies.len(), self.perf_index);
+        info!("{}", t_with_args("fas-init-summary", &fluent_args!(
+            "fps" => format!("{:.0}", self.current_target_fps),
+            "margin" => format!("{:.1}", self.fps_margin),
+            "clusters" => self.policies.len().to_string(),
+            "perf" => format!("{:.2}", self.perf_index),
+            "profiles" => self.cfg.per_app_profiles.len().to_string()
+        )));
     }
 
     // ════════════════════════════════════════════════════════════
@@ -1007,7 +1044,10 @@ impl FasController {
             self.gear_dampen_frames = scale_frames(self.cfg.gear_dampen_frames, self.current_target_fps);
             self.post_loading_downgrade_guard = self.cfg.post_loading_downgrade_guard;
             self.apply_freqs();
-            info!("FAS: app switch ({:.0}ms) | P → {:.2}", actual_ms, self.perf_index);
+            info!("{}", t_with_args("fas-app-switch", &fluent_args!(
+                "ms" => format!("{:.0}", actual_ms),
+                "perf" => format!("{:.2}", self.perf_index)
+            )));
             return true;
         }
 
@@ -1029,8 +1069,12 @@ impl FasController {
                 self.perf_index = self.perf_index
                     .clamp(self.cfg.loading_perf_floor, self.cfg.loading_perf_ceiling);
                 if old != self.perf_index { self.apply_freqs(); }
-                info!("FAS: loading ({} frames, {:.0}ms) | P {:.2} → {:.2}",
-                    self.loading_frames, self.loading_cumulative_ms, old, self.perf_index);
+                info!("{}", t_with_args("fas-loading-start", &fluent_args!(
+                    "frames" => self.loading_frames.to_string(),
+                    "ms" => format!("{:.0}", self.loading_cumulative_ms),
+                    "old_perf" => format!("{:.2}", old),
+                    "new_perf" => format!("{:.2}", self.perf_index)
+                )));
             }
             return true;
         }
@@ -1058,7 +1102,7 @@ impl FasController {
             self.gear_dampen_frames = scale_frames(self.cfg.gear_dampen_frames, self.current_target_fps);
             self.post_loading_downgrade_guard = self.cfg.post_loading_downgrade_guard;
             self.apply_freqs();
-            info!("FAS: exit loading | P → {:.2}", self.perf_index);
+            info!("{}", t_with_args("fas-loading-exit", &fluent_args!("perf" => format!("{:.2}", self.perf_index))));
         }
 
         false
@@ -1129,8 +1173,12 @@ impl FasController {
                     if self.upgrade_confirm_frames >= confirm {
                         self.consecutive_downgrade_count = 0;
                         self.stable_gear_frames = 0;
-                        info!("FAS: low-perf upgrade | P={:.2} avg={:.1} stddev={:.1} → {:.0}fps",
-                            self.perf_index, avg_fps, self.fps_window.stddev(), next);
+                        info!("{}", t_with_args("fas-low-perf-upgrade", &fluent_args!(
+                            "perf" => format!("{:.2}", self.perf_index),
+                            "avg" => format!("{:.1}", avg_fps),
+                            "stddev" => format!("{:.1}", self.fps_window.stddev()),
+                            "fps" => format!("{:.0}", next)
+                        )));
                         return GearDecision::Upgrade {
                             target: next, perf: (self.perf_index + 0.20).min(0.65),
                             dampen: scale_frames(self.cfg.gear_dampen_frames, next),
@@ -1174,8 +1222,12 @@ impl FasController {
                     self.downgrade_boost_remaining = scaled_duration;
                     self.downgrade_boost_perf_saved = self.perf_index;
                     self.perf_index = (self.perf_index + boost_inc).min(0.90);
-                    info!("FAS: boost | avg:{:.1} | P {:.2} → {:.2} (inc={:.3})",
-                        avg_fps, self.downgrade_boost_perf_saved, self.perf_index, boost_inc);
+                    info!("{}", t_with_args("fas-downgrade-boost", &fluent_args!(
+                        "avg" => format!("{:.1}", avg_fps),
+                        "old" => format!("{:.2}", self.downgrade_boost_perf_saved),
+                        "new" => format!("{:.2}", self.perf_index),
+                        "inc" => format!("{:.3}", boost_inc)
+                    )));
                 } else if self.downgrade_boost_active && self.downgrade_boost_remaining > 0 {
                     self.downgrade_boost_remaining -= 1;
                     if self.downgrade_boost_remaining == 0 {
@@ -1184,8 +1236,9 @@ impl FasController {
                         self.perf_index = blended.max(self.downgrade_boost_perf_saved);
                         self.downgrade_boost_active = false;
                         self.downgrade_confirm_frames += 10;
-                        info!("FAS: boost expired, fast-tracking downgrade (confirm={})",
-                            self.downgrade_confirm_frames);
+                        info!("{}", t_with_args("fas-boost-expired", &fluent_args!(
+                            "confirm" => self.downgrade_confirm_frames.to_string()
+                        )));
                     }
                 } else {
                     self.downgrade_confirm_frames += 1;
@@ -1304,8 +1357,12 @@ impl FasController {
                 self.pid.reset();
                 self.floor_stuck_frames = 0;
                 act = "floor-rescue";
-                info!("FAS: floor-rescue | stuck {}frames at P={:.2}, avg:{:.1} → P:{:.2}",
-                    stuck_threshold, old, avg, self.perf_index);
+                info!("{}", t_with_args("fas-floor-rescue", &fluent_args!(
+                    "frames" => stuck_threshold.to_string(),
+                    "old" => format!("{:.2}", old),
+                    "avg" => format!("{:.1}", avg),
+                    "new" => format!("{:.2}", self.perf_index)
+                )));
             }
         } else {
             self.floor_stuck_frames = 0;
@@ -1446,18 +1503,20 @@ impl FasController {
         if self.log_counter % 30 == 0 {
             let ema_err = self.cached_ema_budget - self.ema_actual_ms;
             let inst_err = self.cached_budget_ms - actual_ms;
-            info!("FAS | {:.0}fps avg:{:.1} | {:.2}ms ema:{:.2} | \
-                err:{:+.2}/{:+.2} | {} | P:{:.3} fg_util:{:.2}\
-                {}{}\
-                {}",
-                self.current_target_fps, avg_fps, actual_ms, self.ema_actual_ms,
-                ema_err, inst_err, act, self.perf_index,
-                self.foreground_max_util,
-                if self.upgrade_cooldown > 0 { " cd" } else { "" },
-                if self.gear_dampen_frames > 0 { " damp" } else { "" },
-                if self.current_temperature > 0.0 {
-                    format!(" T:{:.0}℃", self.current_temperature)
-                } else { String::new() });
+            info!("{}", t_with_args("fas-tick-log", &fluent_args!(
+                "target" => format!("{:.0}", self.current_target_fps),
+                "avg" => format!("{:.1}", avg_fps),
+                "ms" => format!("{:.2}", actual_ms),
+                "ema" => format!("{:.2}", self.ema_actual_ms),
+                "err_ema" => format!("{:+.2}", ema_err),
+                "err_inst" => format!("{:+.2}", inst_err),
+                "act" => act,
+                "perf" => format!("{:.3}", self.perf_index),
+                "util" => format!("{:.2}", self.foreground_max_util),
+                "cd" => if self.upgrade_cooldown > 0 { " cd" } else { "" },
+                "damp" => if self.gear_dampen_frames > 0 { " damp" } else { "" },
+                "temp" => if self.current_temperature > 0.0 { format!(" T:{:.0}℃", self.current_temperature) } else { "".to_string() }
+            )));
         }
 
         self.apply_freqs();

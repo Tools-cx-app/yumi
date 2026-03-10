@@ -29,7 +29,8 @@ pub mod fps_monitor;
 pub mod cpu_monitor;
 
 use crate::common::DaemonEvent;
-use crate::i18n::t;
+use crate::fluent_args;
+use crate::i18n::{t, t_with_args};
 
 // 启动函数
 pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
@@ -41,7 +42,7 @@ pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
     // --- 初始化配置 ---
     let initial_config = config::read_config(&rules_path) 
                             .unwrap_or_else(|e| {
-                                log::warn!("[Main] Failed to read initial config: {}. Using default.", e);
+                                log::warn!("{}", t_with_args("monitor-initial-config-failed", &fluent_args!("error" => e.to_string())));
                                 app_detect::get_default_rules()
                             });
 
@@ -62,7 +63,7 @@ pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
         .name("screen_watcher".to_string())
         .spawn(move || {
             if let Err(e) = screen_detect::monitor_screen_state_uevent(screen_state_clone_for_watcher) {
-                error!("[Main] Screen state watcher thread failed: {}", e);
+                error!("{}", t_with_args("monitor-screen-watcher-failed", &fluent_args!("error" => e.to_string())));
             }
         })?;
 
@@ -76,7 +77,7 @@ pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
                 force_refresh_clone_for_watcher,
                 tx_config
             ) {
-                error!("[Main] Config watcher thread failed: {}", e);
+                error!("{}", t_with_args("monitor-config-watcher-failed", &fluent_args!("error" => e.to_string())));
             }
         })?;
 
@@ -88,11 +89,11 @@ pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
             if let Ok(rt) = tokio::runtime::Runtime::new() {
                 rt.block_on(async {
                     if let Err(e) = fps_monitor::start_fps_loop(tx_fps).await {
-                        error!("FPS Monitor crashed: {}", e);
+                        error!("{}", t_with_args("monitor-fps-crashed", &fluent_args!("error" => e.to_string())));
                     }
                 });
             } else {
-                error!("Failed to create Tokio runtime for FPS monitor");
+                error!("{}", t("monitor-fps-tokio-failed"));
             }
         })?;
 
@@ -104,11 +105,11 @@ pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
             if let Ok(rt) = tokio::runtime::Runtime::new() {
                 rt.block_on(async {
                     if let Err(e) = cpu_monitor::start_cpu_loop(tx_cpu).await {
-                        error!("CPU Monitor crashed: {}", e);
+                        error!("{}", t_with_args("monitor-cpu-crashed", &fluent_args!("error" => e.to_string())));
                     }
                 });
             } else {
-                error!("Failed to create Tokio runtime for CPU monitor");
+                error!("{}", t("monitor-cpu-tokio-failed"));
             }
         })?;
 

@@ -21,6 +21,9 @@ use super::fas::FastWriter;
 use log::{info, debug, warn};
 use std::fs;
 
+use crate::i18n::{t, t_with_args};
+use crate::fluent_args;
+
 // ════════════════════════════════════════════════════════════════
 //  ClusterState — 单 cluster 运行时状态
 // ════════════════════════════════════════════════════════════════
@@ -157,22 +160,28 @@ impl CpuLoadGovernor {
             cluster.min_writer.write_value_force(init_freq);
             cluster.current_freq = init_freq;
 
-            info!("CLG[P{}] init | cpus={:?} | P={:.2} -> {} kHz",
-                pid, affected, init_perf, init_freq / 1000);
+            info!("{}", t_with_args("clg-init", &fluent_args!(
+                "pid" => pid.to_string(),
+                "cpus" => format!("{:?}", affected),
+                "fmin" => (fmin / 1000.0).to_string(),
+                "fmax" => (fmax / 1000.0).to_string(),
+                "perf" => format!("{:.2}", init_perf),
+                "freq" => (init_freq / 1000).to_string()
+            )));
 
             self.clusters.push(cluster);
         }
 
         self.active = !self.clusters.is_empty();
         if self.active {
-            info!("CPU Load Governor activated with {} cluster(s)", self.clusters.len());
+            info!("{}", t_with_args("clg-activated", &fluent_args!("count" => self.clusters.len().to_string())));
         } else {
-            warn!("CPU Load Governor: no valid clusters found");
+            warn!("{}", t("clg-no-clusters"));
         }
     }
 
     pub fn release(&mut self) {
-        if self.active { info!("CPU Load Governor deactivated"); }
+        if self.active { info!("{}", t("clg-deactivated")); }
         self.clusters.clear();
         self.active = false;
         self.log_counter = 0;
@@ -180,7 +189,7 @@ impl CpuLoadGovernor {
 
     pub fn reload_config(&mut self, gov_cfg: &CpuLoadGovernorConfig) {
         self.cfg = gov_cfg.clone();
-        debug!("CLG: config hot-reloaded");
+        debug!("{}", t("clg-config-reloaded"));
     }
 
     pub fn on_load_update(&mut self, core_utils: &[f32]) {
@@ -223,8 +232,13 @@ impl CpuLoadGovernor {
         self.log_counter += 1;
         if self.log_counter % 25 == 0 {
             for c in &self.clusters {
-                debug!("CLG[P{}] util={:.0}% perf={:.2} freq={}kHz",
-                    c.policy_id, c.max_util(core_utils) * 100.0, c.current_perf, c.current_freq / 1000);
+                debug!("{}", t_with_args("clg-tick-log", &fluent_args!(
+                    "pid" => c.policy_id.to_string(),
+                    "util" => format!("{:.0}", c.max_util(core_utils) * 100.0),
+                    "perf" => format!("{:.2}", c.current_perf),
+                    "freq" => (c.current_freq / 1000).to_string(),
+                    "boost" => ""
+                )));
             }
         }
     }

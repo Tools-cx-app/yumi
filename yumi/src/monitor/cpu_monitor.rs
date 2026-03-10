@@ -25,6 +25,9 @@ use crate::common::DaemonEvent;
 use crate::monitor::app_detect;
 use log::{info, warn, debug};
 
+use crate::i18n::{t, t_with_args};
+use crate::fluent_args;
+
 /// 获取与 BPF ktime_get_ns() 绝对对齐的单调时钟时间 (纳秒)
 fn get_ktime_ns() -> u64 {
     let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
@@ -54,12 +57,14 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
     let program: &mut TracePoint = bpf.program_mut("handle_sched_switch").unwrap().try_into()?;
     program.load()?;
     program.attach("sched", "sched_switch")?;
-    info!("eBPF System Load monitor started (Long-task blind spot fixed).");
+    info!("{}", t("cpu-monitor-started"));
 
     // 获取准确的物理在线核心列表
-    let online_cpus_list = online_cpus().map_err(|e| anyhow::anyhow!("Failed to get online CPUs: {:?}", e))?;
+    let online_cpus_list = online_cpus().map_err(|e| {
+        anyhow::anyhow!("{}", t_with_args("cpu-monitor-online-cpus-failed", &fluent_args!("error" => format!("{:?}", e))))
+    })?;
     let max_cpu_id = online_cpus_list.iter().copied().max().unwrap_or(0) as usize;
-    info!("Detected online CPU core IDs: {:?}", online_cpus_list);
+    info!("{}", t_with_args("cpu-monitor-online-cpus", &fluent_args!("cpus" => format!("{:?}", online_cpus_list))));
 
     let bpf_ptr = bpf as *mut Ebpf;
 
@@ -91,7 +96,10 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
             let current_pid = app_detect::get_current_pid() as u32;
             if current_pid != last_pid && current_pid > 0 {
                 pid_arc.store(current_pid, Ordering::Relaxed);
-                debug!("CPU monitor: foreground PID updated {} \u{2192} {}", last_pid, current_pid);
+                debug!("{}", t_with_args("cpu-monitor-fg-pid-updated", &fluent_args!(
+                    "old" => last_pid.to_string(),
+                    "new" => current_pid.to_string()
+                )));
                 last_pid = current_pid;
             }
         }
@@ -209,22 +217,25 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
 
             log_counter += 1;
             if log_counter % 25 == 0 {
-                debug!("CPU monitor: cores=[{}] fg_pid={} fg_max_util={:.1}% threads_tracked={} delta={}ms",
-                    core_utils.iter()
-                        .map(|u| format!("{:.0}%", u * 100.0))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    shared_pid.load(Ordering::Relaxed),
-                    foreground_max_util * 100.0,
-                    last_thread_run.len(),
-                    real_delta_ns / 1_000_000);
+                let cores_str = core_utils.iter()
+                    .map(|u| format!("{:.0}", u * 100.0))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                
+                debug!("{}", t_with_args("cpu-monitor-tick-log", &fluent_args!(
+                    "cores" => cores_str,
+                    "pid" => shared_pid.load(Ordering::Relaxed).to_string(),
+                    "util" => format!("{:.1}", foreground_max_util * 100.0),
+                    "threads" => last_thread_run.len().to_string(),
+                    "delta" => (real_delta_ns / 1_000_000).to_string()
+                )));
             }
 
             if tx.send(DaemonEvent::SystemLoadUpdate {
                 core_utils,
                 foreground_max_util,
             }).is_err() {
-                warn!("CPU monitor: channel closed, exiting loop.");
+                warn!("{}", t("cpu-monitor-channel-closed"));
                 break;
             }
         }
