@@ -6,12 +6,13 @@ monitor-module-crashed = Monitor module crashed: { $error }
 monitor-module-started = Monitor module started.
 monitor-starting = Starting yumi-monitor module...
 monitor-boot-scripts-failed = [Main] Failed to run boot scripts: { $error }
-monitor-initial-config-failed = [Main] Failed to read initial config: { $error }. Using default.
-monitor-screen-watcher-failed = [Main] Screen state watcher thread failed: { $error }
-monitor-config-watcher-failed = [Main] Config watcher thread failed: { $error }
+monitor-initial-config-failed = [Main] Failed to read initial config: { $error }.
+    Using default.
+monitor-screen-watcher-failed = [Main] Screen state watcher thread crashed: { $error }
+monitor-config-watcher-failed = [Main] Config watcher thread crashed: { $error }
 monitor-fps-crashed = [Main] FPS Monitor crashed: { $error }
 monitor-fps-tokio-failed = [Main] Failed to create Tokio runtime for FPS monitor
-monitor-cpu-crashed = [Main] CPU Monitor crashed: { $error }
+monitor-cpu-crashed = [Main] CPU Load Monitor crashed: { $error }
 monitor-cpu-tokio-failed = [Main] Failed to create Tokio runtime for CPU monitor
 
 # Boot
@@ -23,9 +24,9 @@ boot-script-exec-failed = [Boot] Failed to execute script { $name }: { $error }
 boot-scripts-finished = [Boot] Boot scripts execution finished.
 
 # Power
-power-cpu-temp-found = [Power] Found CPU temp sensor: { $path }
-power-cpu-temp-not-found = [Power] CPU temp path not found: { $error }.
-Using 0.0.
+power-cpu-temp-found = [Power] Successfully found CPU temp sensor: { $path }
+power-cpu-temp-not-found = [Power] Failed to find CPU temp path: { $error }.
+    Using 0.0 as temperature.
 power-loop-started = [Power] Power monitoring loop started.
 power-screen-off-skip = [Power] Screen is off, skipping power poll.
 power-charging-stopped = [Power] Charging stopped. Checking session limits...
@@ -37,12 +38,12 @@ power-status-read-failed = [Power] Failed to read charging status: { $error }
 
 # AppDetect
 app-detect-config-watch = [AppDetect] Started watching config file: { $path }
-app-detect-change-detected = [AppDetect] Change detected, debouncing for 100ms...
+app-detect-change-detected = [AppDetect] Change detected, debouncing (100ms)...
 app-detect-reloading = [AppDetect] Debounce finished. Reloading config...
 app-detect-load-failed = [AppDetect] Failed: { $error }. Using default.
 app-detect-reload-success = [AppDetect] Config reloaded successfully.
 app-detect-loop-started = [AppDetect] App detection loop started (3000ms poll).
-app-detect-screen-changed = [AppDetect] Screen changed: { $old } -> { $new }
+app-detect-screen-changed = [AppDetect] Screen state changed: { $old } -> { $new }
 app-detect-mode-change = [AppDetect] Mode change: { $old } -> { $new }
 app-detect-mode-change-pkg = [AppDetect] Mode change: { $old } -> { $new } ({ $pkg })
 app-detect-ime-auto = [AppDetect] Auto-detected IME: { $pkg }
@@ -78,9 +79,9 @@ scheduler-fas-suspend-clear = [Scheduler] FAS: clearing stale suspend state befo
 scheduler-fas-suspended = [Scheduler] FAS: suspended (pkg={ $pkg }, grace={ $grace }s, in-memory state preserved)
 scheduler-fas-resumed = [Scheduler] FAS: resumed from suspend (pkg={ $pkg }, pid={ $pid }, policies intact, sysfs reapplied)
 scheduler-fas-takeover = [Scheduler] Entered FAS mode (pkg={ $pkg }, pid={ $pid }), FAS controller is now taking over CPU frequencies.
-scheduler-clg-resync = [Scheduler] CLG: resync after app-launch-boost ended
+scheduler-clg-resync = [Scheduler] CLG: resync after app launch boost ended
 scheduler-config-reload-event = [Scheduler] Received config reload event. Updating in-memory rules...
-scheduler-fas-full-init = [Scheduler] FAS: full policy init on config reload (was empty).
+scheduler-fas-full-init = [Scheduler] FAS: full policy init triggered by config reload (was empty).
 scheduler-fas-hot-reload = [Scheduler] FAS: rules hot-reloaded without resetting runtime state.
 scheduler-fas-grace-expired = [Scheduler] FAS: suspend grace expired, clearing FAS in-memory state
 scheduler-clg-init = [Scheduler] CPU Load Governor: initialized at startup (mode={ $mode })
@@ -94,8 +95,8 @@ config-apply-mode-failed = [Config] Failed to apply reloaded mode settings: { $e
 config-apply-tweaks-failed = [Config] Failed to apply reloaded system tweaks: { $error }
 
 # --- CLG ---
-clg-init = [CLG] P{ $pid } init | cpus={ $cpus } | freqs={ $fmin }-{ $fmax } MHz | P={ $perf } -> { $freq } kHz
-clg-activated = [CLG] CPU Load Governor activated with { $count } cluster(s)
+clg-init = [CLG] P{ $pid } init | cores={ $cpus } | freqs={ $fmin }-{ $fmax } MHz | P={ $perf } -> { $freq } kHz
+clg-activated = [CLG] CPU Load Governor activated, taking over { $count } cluster(s)
 clg-no-clusters = [CLG] CPU Load Governor: no valid clusters found, staying inactive
 clg-deactivated = [CLG] CPU Load Governor deactivated
 clg-config-reloaded = [CLG] config hot-reloaded | up={ $up } down={ $down } floor={ $floor } ceil={ $ceil }
@@ -107,20 +108,20 @@ fas-open-failed = [FAS] failed to open { $path }: { $error }
 fas-umount2-failed = [FAS] umount2({ $path }) = { $error }
 fas-write-freq-failed = [FAS] write freq { $freq } failed: { $error }
 fas-freq-mismatch = [FAS] P{ $pid }: freq mismatch! expected { $min }-{ $max }, actual { $actual } -> emergency reapply
-fas-auto-capacity = [FAS] auto capacity:
+fas-auto-capacity = [FAS] auto capacity weight:
 fas-auto-capacity-core = [FAS]   P{ $pid }: cap={ $cap } -> w={ $weight }
 fas-sysfs-invalid = [FAS] P{ $pid } sysfs writer invalid, freq control may fail!
 fas-policy-init = [FAS] P{ $pid } { $min }-{ $max } MHz | w={ $weight }
 fas-init-summary = [FAS] init | { $fps }fps margin:{ $margin } clusters:{ $clusters } P:{ $perf } profiles:{ $profiles }
-fas-init-pid = [FAS] PID  | Kp={ $kp } Ki={ $ki } Kd={ $kd }
+fas-init-pid = [FAS] PID parameters | Kp={ $kp } Ki={ $ki } Kd={ $kd }
 fas-app-switch = [FAS] app switch ({ $ms }ms) | P -> { $perf }
-fas-loading-start = [FAS] loading ({ $frames } frames, { $ms }ms) | P { $old_perf } -> { $new_perf }
-fas-loading-exit = [FAS] exit loading | P -> { $perf }
-fas-gear-switch = [FAS] gear { $old } -> { $new }fps | P -> { $perf }
-fas-low-perf-upgrade = [FAS] low-perf upgrade | P={ $perf } avg={ $avg } stddev={ $stddev } -> { $fps }fps
-fas-downgrade-boost = [FAS] boost | avg:{ $avg } | P { $old } -> { $new } (inc={ $inc })
+fas-loading-start = [FAS] entering loading state ({ $frames } frames, { $ms }ms) | P { $old_perf } -> { $new_perf }
+fas-loading-exit = [FAS] exit loading state | P -> { $perf }
+fas-gear-switch = [FAS] gear switch { $old } -> { $new }fps | P -> { $perf }
+fas-low-perf-upgrade = [FAS] low-load steady frame upgrade | P={ $perf } avg={ $avg } stddev={ $stddev } -> { $fps }fps
+fas-downgrade-boost = [FAS] downgrade boost | avg:{ $avg } | P { $old } -> { $new } (inc={ $inc })
 fas-boost-expired = [FAS] boost expired, fast-tracking downgrade (confirm={ $confirm })
-fas-floor-rescue = [FAS] floor-rescue | stuck { $frames }frames at P={ $old }, avg:{ $avg } -> P:{ $new }
+fas-floor-rescue = [FAS] floor-rescue | stuck { $frames } frames at P={ $old }, avg:{ $avg } -> P:{ $new }
 fas-tick-log = [FAS] { $target }fps avg:{ $avg } | { $ms }ms ema:{ $ema } | err:{ $err_ema }/{ $err_inst } | { $act } | P:{ $perf } fg_util:{ $util }{ $cd }{ $damp }{ $temp }
 fas-set-game = [FAS] set_game | pkg={ $pkg } | gears={ $gears } | target={ $target }fps
 fas-no-profile = [FAS] no per-app profile for '{ $pkg }', using global gears { $gears }
@@ -144,8 +145,8 @@ appLaunchboost-thread-created = [Boost] AppLaunchBoost thread created.
 # --- Scheduler: Core Allocation ---
 pidof-failed = Failed to execute pidof for '{ $name }': { $error }
 process-not-found = Process '{ $name }' not found, skipping.
-cpuset-write-failed = Failed to write to cpuset for { $name }: { $error }
-cpuctl-write-failed = Failed to write to cpuctl for { $name }: { $error }
+cpuset-write-failed = Failed to write to cpuset ({ $name }): { $error }
+cpuctl-write-failed = Failed to write to cpuctl ({ $name }): { $error }
 thread-core-allocation-log = Thread core allocation completed.
 main-config-watch-thread-create = Main config watcher thread created.
 
