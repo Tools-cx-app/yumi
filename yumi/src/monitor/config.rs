@@ -26,8 +26,6 @@ use std::path::PathBuf;
 use crate::common;
 
 pub fn get_rules_path() -> PathBuf { common::get_module_root().join("rules.yaml") }
-pub fn get_boot_scripts_path() -> PathBuf { common::get_module_root().join("boot_scripts.yaml") }
-pub fn get_scripts_dir() -> PathBuf { common::get_module_root().join("scripts") }
 
 // ════════════════════════════════════════════════════════════════
 //  PID 系数
@@ -98,80 +96,6 @@ pub struct PerAppProfile {
     /// 该应用的帧率余量（覆盖全局 fps_margin）
     #[serde(default)]
     pub fps_margin: Option<f32>,
-}
-
-// ════════════════════════════════════════════════════════════════
-//  CPU Load Governor 配置
-// ════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CpuLoadGovernorConfig {
-    /// 是否启用负载调频
-    #[serde(default)]
-    pub enabled: bool,
-
-    /// 升频阈值（核心利用率超过此值触发升频）
-    #[serde(default = "d_clg_up_thresh")]
-    pub up_threshold: f32,
-
-    /// 降频阈值（核心利用率低于此值允许降频）
-    #[serde(default = "d_clg_down_thresh")]
-    pub down_threshold: f32,
-
-    /// 升频平滑系数 (0.0~1.0, 越大响应越快)
-    #[serde(default = "d_clg_smooth_up")]
-    pub smoothing_up: f32,
-
-    /// 降频平滑系数
-    #[serde(default = "d_clg_smooth_down")]
-    pub smoothing_down: f32,
-
-    /// 降频 rate limit（连续多少个 tick 后才允许降频）
-    #[serde(default = "d_clg_down_rate")]
-    pub down_rate_limit_ticks: u32,
-
-    /// 余量因子：target_perf = util × headroom_factor
-    #[serde(default = "d_clg_headroom")]
-    pub headroom_factor: f32,
-
-    /// 性能地板
-    #[serde(default = "d_clg_floor")]
-    pub perf_floor: f32,
-
-    /// 性能天花板
-    #[serde(default = "d_clg_ceil")]
-    pub perf_ceil: f32,
-
-    /// 初始性能指数
-    #[serde(default = "d_clg_init")]
-    pub perf_init: f32,
-}
-
-fn d_clg_up_thresh() -> f32 { 0.80 }
-fn d_clg_down_thresh() -> f32 { 0.50 }
-fn d_clg_smooth_up() -> f32 { 0.60 }
-fn d_clg_smooth_down() -> f32 { 0.30 }
-fn d_clg_down_rate() -> u32 { 3 }
-fn d_clg_headroom() -> f32 { 1.25 }
-fn d_clg_floor() -> f32 { 0.15 }
-fn d_clg_ceil() -> f32 { 1.0 }
-fn d_clg_init() -> f32 { 0.50 }
-
-impl Default for CpuLoadGovernorConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            up_threshold: d_clg_up_thresh(),
-            down_threshold: d_clg_down_thresh(),
-            smoothing_up: d_clg_smooth_up(),
-            smoothing_down: d_clg_smooth_down(),
-            down_rate_limit_ticks: d_clg_down_rate(),
-            headroom_factor: d_clg_headroom(),
-            perf_floor: d_clg_floor(),
-            perf_ceil: d_clg_ceil(),
-            perf_init: d_clg_init(),
-        }
-    }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -345,7 +269,7 @@ impl Default for FasRulesConfig {
 }
 
 // ════════════════════════════════════════════════════════════════
-//  Rules / Boot 配置
+//  Rules 配置
 // ════════════════════════════════════════════════════════════════
 
 fn default_true() -> bool { true }
@@ -358,12 +282,6 @@ pub struct RulesConfig {
     pub app_modes: HashMap<String, String>,
     #[serde(default)] pub ignored_apps: Vec<String>,
     #[serde(default)] pub fas_rules: FasRulesConfig,
-    #[serde(default)] pub cpu_load_governor: CpuLoadGovernorConfig,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct BootScriptsConfig {
-    pub scripts: HashMap<String, bool>,
 }
 
 pub fn read_config<T, P>(path: P) -> Result<T, Box<dyn Error>>

@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use crate::common::DaemonEvent;
 use crate::monitor::app_detect;
-use log::{info, debug, warn};
+use log::{info, debug};
 
 pub async fn start_fps_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error> {
     static BPF_DATA: &[u8] = include_bytes_aligned!(env!("BPF_FPS_OBJ_PATH"));

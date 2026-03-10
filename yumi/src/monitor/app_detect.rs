@@ -182,7 +182,6 @@ pub fn get_default_rules() -> RulesConfig {
         app_modes: HashMap::new(),
         ignored_apps: Vec::new(),
         fas_rules: super::config::FasRulesConfig::default(),
-        cpu_load_governor: super::config::CpuLoadGovernorConfig::default(),
     }
 }
 

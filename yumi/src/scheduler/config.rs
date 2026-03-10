@@ -16,285 +16,82 @@
  */
 
 use serde::Deserialize;
-use std::collections::HashMap;
-use serde::Deserializer;
-use std::fmt;
-
-// de_util 模块保持不变
-mod de_util {
-    use super::*;
-    use serde::de::{self, Visitor};
-
-    pub fn deserialize_freq<'de, D>(deserializer: D) -> Result<u32, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_any(FreqVisitor)
-    }
-
-    struct FreqVisitor;
-
-    impl<'de> Visitor<'de> for FreqVisitor {
-        type Value = u32;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a string 'min', 'max', or an integer")
-        }
-
-        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            match value {
-                "min" => Ok(0),
-                "max" | "" => Ok(9999999), // 空字符串视为默认值 (max)
-                _ => {
-                    Err(de::Error::unknown_variant(value, &["min", "max", ""]))
-                }
-            }
-        }
-
-        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            u32::try_from(value).map_err(|_| {
-                de::Error::invalid_value(de::Unexpected::Unsigned(value), &self)
-            })
-        }
-    }
-}
 
 #[derive(Debug, Deserialize, Default)]
 pub struct Meta {
-    // 同时支持 "loglevel" 和 "Loglevel"
     #[serde(default = "default_loglevel", alias = "Loglevel")]
     pub loglevel: String,
     
-    // 同时支持 "language" 和 "Language"
     #[serde(default = "default_language", alias = "Language")]
     pub language: String,
 }
 
-fn default_loglevel() -> String {
-    "INFO".to_string()
-}
+fn default_loglevel() -> String { "INFO".to_string() }
+fn default_language() -> String { "en".to_string() }
 
-fn default_language() -> String {
-    "en".to_string()
-}
-
-#[derive(Debug, Deserialize, Default, Clone)]
-#[serde(rename_all = "PascalCase")]
-pub struct GovernorSettings {
-    #[serde(default = "default_governor")]
-    pub global: String,
-    pub small_core: String,
-    pub medium_core: String,
-    pub big_core: String,
-    pub super_big_core: String,
-}
-
-fn default_governor() -> String {
-    "schedutil".to_string()
-}
+// ════════════════════════════════════════════════════════════════
+//  CPU Load Governor 配置
+// ════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "PascalCase")]
-pub struct FreqSettings {
-    #[serde(deserialize_with = "de_util::deserialize_freq")]
-    pub small_core_min_freq: u32,
-    #[serde(deserialize_with = "de_util::deserialize_freq")]
-    pub small_core_max_freq: u32,
-    #[serde(deserialize_with = "de_util::deserialize_freq")]
-    pub medium_core_min_freq: u32,
-    #[serde(deserialize_with = "de_util::deserialize_freq")]
-    pub medium_core_max_freq: u32,
-    #[serde(deserialize_with = "de_util::deserialize_freq")]
-    pub big_core_min_freq: u32,
-    #[serde(deserialize_with = "de_util::deserialize_freq")]
-    pub big_core_max_freq: u32,
-    #[serde(deserialize_with = "de_util::deserialize_freq")]
-    pub super_big_core_min_freq: u32,
-    #[serde(deserialize_with = "de_util::deserialize_freq")]
-    pub super_big_core_max_freq: u32,
+pub struct CpuLoadGovernorConfig {
+    #[serde(default = "default_true")] pub enabled: bool,
+    #[serde(default = "d_clg_up_thresh")] pub up_threshold: f32,
+    #[serde(default = "d_clg_down_thresh")] pub down_threshold: f32,
+    #[serde(default = "d_clg_smooth_up")] pub smoothing_up: f32,
+    #[serde(default = "d_clg_smooth_down")] pub smoothing_down: f32,
+    #[serde(default = "d_clg_down_rate")] pub down_rate_limit_ticks: u32,
+    #[serde(default = "d_clg_headroom")] pub headroom_factor: f32,
+    #[serde(default = "d_clg_floor")] pub perf_floor: f32,
+    #[serde(default = "d_clg_ceil")] pub perf_ceil: f32,
+    #[serde(default = "d_clg_init")] pub perf_init: f32,
 }
 
-impl Default for FreqSettings {
+fn default_true() -> bool { true }
+fn d_clg_up_thresh() -> f32 { 0.80 }
+fn d_clg_down_thresh() -> f32 { 0.50 }
+fn d_clg_smooth_up() -> f32 { 0.60 }
+fn d_clg_smooth_down() -> f32 { 0.30 }
+fn d_clg_down_rate() -> u32 { 3 }
+fn d_clg_headroom() -> f32 { 1.25 }
+fn d_clg_floor() -> f32 { 0.15 }
+fn d_clg_ceil() -> f32 { 1.0 }
+fn d_clg_init() -> f32 { 0.50 }
+
+impl Default for CpuLoadGovernorConfig {
     fn default() -> Self {
         Self {
-            small_core_min_freq: 0,
-            small_core_max_freq: 10_000_000,
-            medium_core_min_freq: 0,
-            medium_core_max_freq: 10_000_000,
-            big_core_min_freq: 0,
-            big_core_max_freq: 10_000_000,
-            super_big_core_min_freq: 0,
-            super_big_core_max_freq: 10_000_000,
+            enabled: true,
+            up_threshold: d_clg_up_thresh(),
+            down_threshold: d_clg_down_thresh(),
+            smoothing_up: d_clg_smooth_up(),
+            smoothing_down: d_clg_smooth_down(),
+            down_rate_limit_ticks: d_clg_down_rate(),
+            headroom_factor: d_clg_headroom(),
+            perf_floor: d_clg_floor(),
+            perf_ceil: d_clg_ceil(),
+            perf_init: d_clg_init(),
         }
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "PascalCase")]
-pub struct UclampSettings {
-    pub uclamp_top_app_min: String,
-    pub uclamp_top_app_max: String,
-    #[serde(rename = "UclampTopApplatency_sensitive")]
-    pub uclamp_top_app_latency_sensitive: String,
-    pub uclamp_fore_ground_min: String,
-    pub uclamp_fore_ground_max: String,
-    pub uclamp_back_ground_min: String,
-    pub uclamp_back_ground_max: String,
-}
-
-impl Default for UclampSettings {
-    fn default() -> Self {
-        Self {
-            uclamp_top_app_min: "0".to_string(),
-            uclamp_top_app_max: "100".to_string(),
-            uclamp_top_app_latency_sensitive: "0".to_string(),
-            uclamp_fore_ground_min: "0".to_string(),
-            uclamp_fore_ground_max: "70".to_string(),
-            uclamp_back_ground_min: "0".to_string(),
-            uclamp_back_ground_max: "50".to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Default, Clone)]
-#[serde(rename_all = "PascalCase")]
-pub struct Other {
-    #[serde(rename = "ufsClkGate")]
-    pub ufs_clk_gate: bool,
-}
+// ════════════════════════════════════════════════════════════════
+//  核心模式与杂项配置
+// ════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Deserialize, Default, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct Mode {
     #[serde(default)]
-    pub governor: GovernorSettings,
-    #[serde(default)]
-    pub freq: FreqSettings,
-    #[serde(default)]
-    pub uclamp: UclampSettings,
-    #[serde(default)]
-    pub govsets: HashMap<String, HashMap<String, HashMap<String, String>>>,
-    #[serde(default)]
-    pub other: Other,
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct Config {
-    #[serde(default, alias = "Meta")]
-    pub meta: Meta,
-    #[serde(default)]
-    pub function: FunctionToggles,
-    #[serde(default, rename = "AppLaunchBoostSettings")]
-    pub app_launch_boost_settings: AppLaunchBoostSettings,
-    #[serde(default, rename = "CoreAllocation")]
-    pub core_allocation: CoreAllocation,
-    #[serde(default, rename = "CoreFramework")]
-    pub core_framework: CoreFramework,
-    #[serde(default, rename = "IO_Settings")]
-    pub io_settings: IOSettings,
-    #[serde(default, rename = "CompletelyFairSchedulerValue")]
-    pub completely_fair_scheduler_value: CompletelyFairSchedulerValue,
-    #[serde(default, rename = "CpuIdle")]
-    pub cpu_idle: CpuIdle,
-    #[serde(default, rename = "Cpuset")]
-    pub cpu_set: Cpuset,
-    #[serde(default, rename = "pGovPath")]
-    pub p_gov_path: HashMap<String, HashMap<String, String>>,
-    #[serde(default)]
-    pub powersave: Mode,
-    #[serde(default)]
-    pub balance: Mode,
-    #[serde(default)]
-    pub performance: Mode,
-    #[serde(default)]
-    pub fast: Mode,
-}
-
-#[derive(Debug, Deserialize, Default)]
-pub struct FunctionToggles {
-    #[serde(rename = "AffinitySetter")]
-    pub affinity_setter: bool,
-    #[serde(rename = "CpuIdleScalingGovernor")]
-    pub cpu_idle_scaling_governor: bool,
-    #[serde(rename = "EasScheduler")]
-    pub eas_scheduler: bool,
-    pub cpuset: bool,
-    #[serde(rename = "LoadBalancing")]
-    pub load_balancing: bool,
-    #[serde(rename = "EnableFeas")]
-    pub enable_feas: bool,
-    #[serde(rename = "IOOptimization")]
-    pub io_optimization: bool,
-    #[serde(rename = "AppLaunchBoost")]
-    pub app_launch_boost: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct AppLaunchBoostSettings {
-    #[serde(default = "default_boost_rate")]
-    pub boost_rate_ms: u64,
-    #[serde(default = "default_boost_freq", deserialize_with = "de_util::deserialize_freq")]
-    pub small_core_boost_freq: u32,
-    #[serde(default = "default_boost_freq", deserialize_with = "de_util::deserialize_freq")]
-    pub medium_core_boost_freq: u32,
-    #[serde(default = "default_boost_freq", deserialize_with = "de_util::deserialize_freq")]
-    pub big_core_boost_freq: u32,
-    #[serde(default = "default_boost_freq", deserialize_with = "de_util::deserialize_freq")]
-    pub super_big_core_boost_freq: u32,
-}
-
-impl Default for AppLaunchBoostSettings {
-    fn default() -> Self {
-        Self {
-            boost_rate_ms: default_boost_rate(),
-            small_core_boost_freq: default_boost_freq(),
-            medium_core_boost_freq: default_boost_freq(),
-            big_core_boost_freq: default_boost_freq(),
-            super_big_core_boost_freq: default_boost_freq(),
-        }
-    }
-}
-
-/// 默认 boost 频率 = "max"，即内核允许的最高值
-fn default_boost_freq() -> u32 { 9999999 }
-fn default_boost_rate() -> u64 { 200 }
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "PascalCase")]
-pub struct CoreAllocation {
-    pub cpu_set_core: String,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(rename_all = "PascalCase")]
-pub struct CoreFramework {
-    pub small_core_path: i32,
-    pub medium_core_path: i32,
-    pub big_core_path: i32,
-    pub super_big_core_path: i32,
+    pub cpu_load_governor: CpuLoadGovernorConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct IOSettings {
-    /// IO 调度器，遍历 /sys/block/* 写入（如 "none", "mq-deadline", "bfq"）
-    #[serde(default, rename = "Scheduler")]
-    pub scheduler: String,
-    /// 预读大小 (KB)
-    #[serde(default = "default_read_ahead_kb")]
-    pub read_ahead_kb: String,
-    /// 合并请求策略 (0=允许合并, 1=仅简单合并, 2=禁止合并)
-    #[serde(default = "default_nomerges")]
-    pub nomerges: String,
-    /// IO 统计信息 (0=禁用, 1=启用)
-    #[serde(default = "default_iostats")]
-    pub iostats: String,
+    #[serde(default, rename = "Scheduler")] pub scheduler: String,
+    #[serde(default = "default_read_ahead_kb")] pub read_ahead_kb: String,
+    #[serde(default = "default_nomerges")] pub nomerges: String,
+    #[serde(default = "default_iostats")] pub iostats: String,
 }
 
 impl Default for IOSettings {
@@ -313,31 +110,34 @@ fn default_nomerges() -> String { "2".to_string() }
 fn default_iostats() -> String { "0".to_string() }
 
 #[derive(Debug, Deserialize, Default)]
-pub struct CompletelyFairSchedulerValue {
-    #[serde(rename = "sched_child_runs_first")]
-    pub sched_child_runs_first: String,
-    #[serde(rename = "sched_rt_period_us")]
-    pub sched_rt_period_us: String,
-    #[serde(rename = "sched_rt_runtime_us")]
-    pub sched_rt_runtime_us: String,
-}
-
-#[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct CpuIdle {
     pub current_governor: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
-pub struct Cpuset {
-  pub top_app: String,
-  pub foreground: String,
-  pub restricted: String,
-  pub system_background: String,
-  pub background: String,
+pub struct FunctionToggles {
+    #[serde(rename = "CpuIdleScalingGovernor")] pub cpu_idle_scaling_governor: bool,
+    #[serde(rename = "IOOptimization")] pub io_optimization: bool,
 }
 
-
+#[derive(Debug, Deserialize, Default)]
+pub struct Config {
+    #[serde(default, alias = "Meta")]
+    pub meta: Meta,
+    #[serde(default)]
+    pub function: FunctionToggles,
+    #[serde(default, rename = "IO_Settings")]
+    pub io_settings: IOSettings,
+    #[serde(default, rename = "CpuIdle")]
+    pub cpu_idle: CpuIdle,
+    
+    // 按场景划分的性能模式
+    #[serde(default)] pub powersave: Mode,
+    #[serde(default)] pub balance: Mode,
+    #[serde(default)] pub performance: Mode,
+    #[serde(default)] pub fast: Mode,
+}
 
 impl Config {
     pub fn from_file(path: &str) -> anyhow::Result<Self> {

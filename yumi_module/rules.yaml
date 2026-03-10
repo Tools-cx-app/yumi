@@ -1,6 +1,6 @@
 yumi_scheduler: true
 dynamic_enabled: true
-global_mode: "balance"
+global_mode: "powersave"
 
 app_modes:
   com.miHoYo.GenshinImpact: "fas"
@@ -10,27 +10,12 @@ app_modes:
 ignored_apps:
   - com.android.systemui
 
-# 全局 CPU 负载感知调频器
-# 对所有非 FAS 模式的前台应用生效
-# 进入 FAS 模式时自动让位，退出 FAS 后自动恢复
-cpu_load_governor:
-  enabled: true
-  up_threshold: 0.80
-  down_threshold: 0.30
-  down_rate_limit_ticks: 5
-  perf_floor: 0.15
-  perf_ceil: 0.95
-  perf_init: 0.40
-  smoothing_up: 0.45
-  smoothing_down: 0.15
-  headroom_factor: 1.25
-
 fas_rules:
   # ── 全局默认档位 (未在 per_app_profiles 中配置的游戏使用) ──
   fps_gears: [30.0, 60.0, 90.0, 120.0, 144.0]
   fps_margin: 3.0
 
-  # ── 每游戏 FAS 配置 (fas-rs 风格) ──
+  # ── 每游戏 FAS 配置 ──
   # target_fps: 该游戏会渲染到的目标帧率数组，运行时动态匹配
   # fps_margin: 该游戏的帧率余量 (可选，不设则用全局值)
   per_app_profiles:

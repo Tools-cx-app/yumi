@@ -22,7 +22,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Sender;
 use log::{error, info};
 
-pub mod boot;
 pub mod config;
 pub mod app_detect;
 pub mod screen_detect;
@@ -35,11 +34,6 @@ use crate::i18n::t;
 // 启动函数
 pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
     info!("{}", t("monitor-starting"));
-
-    // 2. 执行开机脚本
-    if let Err(e) = boot::run_boot_scripts() {
-        error!("Failed to run boot scripts: {}", e);
-    }
 
     // --- 初始化共享配置 ---
     let rules_path = config::get_rules_path();

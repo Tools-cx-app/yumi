@@ -7,268 +7,70 @@ meta:
 
 # 主要功能开关
 function:
-  AffinitySetter: false
   CpuIdleScalingGovernor: false
-  EasScheduler: false
-  cpuset: false
-  LoadBalancing: false
-  EnableFeas: false
   IOOptimization: true
-  AppLaunchBoost: false
 
-# App启动加速设置
-AppLaunchBoostSettings:
-  BoostRateMs: 600
-  SmallCoreBoostFreq: ""
-  MediumCoreBoostFreq: ""
-  BigCoreBoostFreq: ""
-  SuperBigCoreBoostFreq: ""
-
-# 核心分配设置
-CoreAllocation:
-  CpuSetCore: "4-7"
-
-# 核心框架路径
-CoreFramework:
-  SmallCorePath: 0
-  MediumCorePath: 4
-  BigCorePath: -1
-  SuperBigCorePath: -1
-
-# IO 设置（遍历 /sys/block/* 所有块设备）
+# IO 设置
 IO_Settings:
   Scheduler: "none"
   read_ahead_kb: "128"
   nomerges: "2"
   iostats: "0"
 
-# CFS 调度器参数
-CompletelyFairSchedulerValue:
-  sched_child_runs_first: ""
-  sched_rt_period_us: ""
-  sched_rt_runtime_us: ""
-
 # CPU 空闲设置
 CpuIdle:
   current_governor: ""
-
-# Cpuset 分组
-Cpuset:
-  top_app: "0-7"
-  foreground: "0-7"
-  restricted: "0-5"
-  system_background: "1-2"
-  background: "0-2"
-
-#调速器参数（path可加） 
-pGovPath:
-  schedutil:
-    path1: ""
-    path2: ""
-    path3: ""
-  walt:
-    path1: ""
-    path2: ""
-    path3: ""
 
 # --- 性能模式 ---
 
 # 省电模式
 powersave:
-  # 调速器
-  Governor:
-    global: "schedutil"
-    SmallCore: ""
-    MediumCore: ""
-    BigCore: ""
-    SuperBigCore: ""
-  # 频率
-  Freq:
-    SmallCoreMinFreq: "min"
-    SmallCoreMaxFreq: 1500000
-    MediumCoreMinFreq: "min"
-    MediumCoreMaxFreq: 1800000
-    BigCoreMinFreq: "min"
-    BigCoreMaxFreq: 1700000
-    SuperBigCoreMinFreq: "min"
-    SuperBigCoreMaxFreq: 1700000
-  # 频率限制
-  Uclamp:
-    UclampTopAppMin: "0"
-    UclampTopAppMax: "100"
-    UclampTopApplatency_sensitive: "0"
-    UclampForeGroundMin: "0"
-    UclampForeGroundMax: "70"
-    UclampBackGroundMin: "0"
-    UclampBackGroundMax: "50"
-  #调速器参数值
-  Govsets:
-    schedutil:
-      path1: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-      path2: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-      path3: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-  # 其他设置
-  Other:
-    ufsClkGate: false
+  cpu_load_governor:
+    up_threshold: 0.85
+    down_threshold: 0.60
+    smoothing_up: 0.40
+    smoothing_down: 0.50
+    down_rate_limit_ticks: 2
+    headroom_factor: 1.10
+    perf_floor: 0.10
+    perf_ceil: 0.70
+    perf_init: 0.30
 
 # 均衡模式
 balance:
-  # 调速器
-  Governor:
-    global: "schedutil"
-    SmallCore: ""
-    MediumCore: ""
-    BigCore: ""
-    SuperBigCore: ""
-  # 频率
-  Freq:
-    SmallCoreMinFreq: "min"
-    SmallCoreMaxFreq: 1500000
-    MediumCoreMinFreq: "min"
-    MediumCoreMaxFreq: 2000000
-    BigCoreMinFreq: "min"
-    BigCoreMaxFreq: 2300000
-    SuperBigCoreMinFreq: "min"
-    SuperBigCoreMaxFreq: 2300000
-  # 频率限制
-  Uclamp:
-    UclampTopAppMin: "0"
-    UclampTopAppMax: "100"
-    UclampTopApplatency_sensitive: "0"
-    UclampForeGroundMin: "0"
-    UclampForeGroundMax: "70"
-    UclampBackGroundMin: "0"
-    UclampBackGroundMax: "50"
-  #调速器参数值
-  Govsets:
-    schedutil:
-      path1: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-      path2: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-      path3: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-  # 其他设置
-  Other:
-    ufsClkGate: false
+  cpu_load_governor:
+    up_threshold: 0.80
+    down_threshold: 0.50
+    smoothing_up: 0.60
+    smoothing_down: 0.30
+    down_rate_limit_ticks: 3
+    headroom_factor: 1.25
+    perf_floor: 0.15
+    perf_ceil: 1.0
+    perf_init: 0.50
 
 # 性能模式
 performance:
-  # 调速器
-  Governor:
-    global: "schedutil"
-    SmallCore: ""
-    MediumCore: ""
-    BigCore: "" 
-    SuperBigCore: ""
-  # 频率
-  Freq:
-    SmallCoreMinFreq: "min"
-    SmallCoreMaxFreq: 1800000
-    MediumCoreMinFreq: "min"
-    MediumCoreMaxFreq: 2500000
-    BigCoreMinFreq: "min"
-    BigCoreMaxFreq: 3000000
-    SuperBigCoreMinFreq: "min"
-    SuperBigCoreMaxFreq: 3000000
-  # 频率限制
-  Uclamp:
-    UclampTopAppMin: "0"
-    UclampTopAppMax: "100"
-    UclampTopApplatency_sensitive: "1"
-    UclampForeGroundMin: "0"
-    UclampForeGroundMax: "80"
-    UclampBackGroundMin: "0"
-    UclampBackGroundMax: "50"
-  #调速器参数值
-  Govsets:
-    schedutil:
-      path1: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-      path2: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-      path3: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-  # 其他设置
-  Other:
-    ufsClkGate: false
+  cpu_load_governor:
+    up_threshold: 0.65
+    down_threshold: 0.40
+    smoothing_up: 0.80
+    smoothing_down: 0.20
+    down_rate_limit_ticks: 5
+    headroom_factor: 1.40
+    perf_floor: 0.35
+    perf_ceil: 1.0
+    perf_init: 0.60
 
 # 极速模式
 fast:
-  # 调速器
-  Governor:
-    global: "schedutil"
-    SmallCore: ""
-    MediumCore: ""
-    BigCore: "" 
-    SuperBigCore: ""
-  # 频率
-  Freq:
-    SmallCoreMinFreq: "max"
-    SmallCoreMaxFreq: "max"
-    MediumCoreMinFreq: "max"
-    MediumCoreMaxFreq: "max"
-    BigCoreMinFreq: "max"
-    BigCoreMaxFreq: "max"
-    SuperBigCoreMinFreq: "max"
-    SuperBigCoreMaxFreq: "max"
-  # 频率限制
-  Uclamp:
-    UclampTopAppMin: "10"
-    UclampTopAppMax: "100"
-    UclampTopApplatency_sensitive: "1"
-    UclampForeGroundMin: "0"
-    UclampForeGroundMax: "80"
-    UclampBackGroundMin: "0"
-    UclampBackGroundMax: "50"
-  #调速器参数值
-  Govsets:
-    schedutil:
-      path1: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-      path2: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-      path3: 
-        SmallCore: ""
-        MediumCore: ""
-        BigCore: ""
-        SuperBigCore: ""
-  # 其他设置
-  Other:
-    ufsClkGate: true
+  cpu_load_governor:
+    up_threshold: 0.01
+    down_threshold: 0.01
+    smoothing_up: 1.0
+    smoothing_down: 0.01
+    down_rate_limit_ticks: 10
+    headroom_factor: 2.0
+    perf_floor: 1.0
+    perf_ceil: 1.0
+    perf_init: 1.0

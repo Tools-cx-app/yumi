@@ -1,6 +1,22 @@
+/*
+ * Copyright (C) 2026 yuki
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 use aya::{Ebpf, include_bytes_aligned, programs::TracePoint};
-use aya::maps::PerCpuArray;
-use aya::maps::HashMap as BpfHashMap;
+use aya::maps::{PerCpuArray, HashMap as BpfHashMap};
 use aya::util::online_cpus;
 use std::sync::mpsc::Sender;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -8,9 +24,14 @@ use std::sync::Arc;
 use crate::common::DaemonEvent;
 use crate::monitor::app_detect;
 use log::{info, warn, debug};
-use std::time::Instant;
 
-/// 从 /proc/{pid}/task/ 读取前台进程的所有线程 TID
+/// 获取与 BPF ktime_get_ns() 绝对对齐的单调时钟时间 (纳秒)
+fn get_ktime_ns() -> u64 {
+    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+    (ts.tv_sec as u64) * 1_000_000_000 + (ts.tv_nsec as u64)
+}
+
 fn get_thread_tids(pid: u32) -> Vec<u32> {
     let task_dir = format!("/proc/{}/task", pid);
     let mut tids = Vec::new();
@@ -29,46 +50,40 @@ fn get_thread_tids(pid: u32) -> Vec<u32> {
 pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error> {
     static BPF_DATA: &[u8] = include_bytes_aligned!(env!("BPF_CPU_OBJ_PATH"));
     
-    // Box::leak 将 Ebpf 提升为 'static 生命周期，
-    // 使得从中借出的 Map 引用可以安全地 move 进 tokio::spawn
-    // （与 fps_monitor.rs 中的做法一致）
     let bpf = Box::leak(Box::new(Ebpf::load(BPF_DATA)?));
     let program: &mut TracePoint = bpf.program_mut("handle_sched_switch").unwrap().try_into()?;
     program.load()?;
     program.attach("sched", "sched_switch")?;
-    info!("eBPF System Load monitor started.");
+    info!("eBPF System Load monitor started (Long-task blind spot fixed).");
 
-    let cpus = online_cpus().map_err(|e| anyhow::anyhow!("Failed to get online CPUs: {:?}", e))?;
-    let num_cpus = cpus.len();
-    // 防御：Rust 侧不超过合理上限
-    let num_cpus = num_cpus.min(16);
-    info!("Detected {} online CPU cores for monitoring.", num_cpus);
+    // 获取准确的物理在线核心列表
+    let online_cpus_list = online_cpus().map_err(|e| anyhow::anyhow!("Failed to get online CPUs: {:?}", e))?;
+    let max_cpu_id = online_cpus_list.iter().copied().max().unwrap_or(0) as usize;
+    info!("Detected online CPU core IDs: {:?}", online_cpus_list);
 
-    // 先取裸指针，再通过 unsafe 分别获取各个 map
-    // 这样避免对 bpf 产生多次 &mut 借用冲突
-    // 安全性：每个 map 是独立的内核对象，内存不重叠，且后续不再直接访问 bpf 本体
     let bpf_ptr = bpf as *mut Ebpf;
 
-    // core_idle_time: BPF_MAP_TYPE_PERCPU_ARRAY
     let core_idle_map: PerCpuArray<_, u64> = PerCpuArray::try_from(
         unsafe { &mut *bpf_ptr }.map_mut("core_idle_time").unwrap()
     )?;
-
-    // core_busy_time: BPF_MAP_TYPE_PERCPU_ARRAY
-    // 与 idle 对称，用于区分"真正空闲"和"深度休眠"
     let core_busy_map: PerCpuArray<_, u64> = PerCpuArray::try_from(
         unsafe { &mut *bpf_ptr }.map_mut("core_busy_time").unwrap()
     )?;
-
+    // [新增] 用于读取最后切换时间
+    let core_last_time_map: PerCpuArray<_, u64> = PerCpuArray::try_from(
+        unsafe { &mut *bpf_ptr }.map_mut("core_last_time").unwrap()
+    )?;
+    // [新增] 用于读取当前跑的 TID
+    let core_current_tid_map: PerCpuArray<_, u32> = PerCpuArray::try_from(
+        unsafe { &mut *bpf_ptr }.map_mut("core_current_tid").unwrap()
+    )?;
     let thread_run_map: BpfHashMap<_, u32, u64> = BpfHashMap::try_from(
         unsafe { &mut *bpf_ptr }.map_mut("thread_run_time").unwrap()
     )?;
 
-    // 追踪前台 PID，用于查询其线程的运行时间
     let shared_pid = Arc::new(AtomicU32::new(app_detect::get_current_pid() as u32));
     let pid_arc = shared_pid.clone();
 
-    // 独立轻量任务：定期同步前台 PID
     tokio::spawn(async move {
         let mut last_pid: u32 = 0;
         loop {
@@ -83,71 +98,71 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
     });
 
     tokio::spawn(async move {
-        // 全局核心历史数据
-        let mut last_idle_times = vec![0u64; num_cpus];
-        // busy 时间历史快照
-        let mut last_busy_times = vec![0u64; num_cpus];
-        let mut last_check_time = Instant::now();
-        
-        // 前台线程历史数据：TID -> 上次采样的累计运行时间
+        // 根据最大 CPU ID 初始化历史记录向量，避免越界
+        let mut last_idle_times = vec![0u64; max_cpu_id + 1];
+        let mut last_busy_times = vec![0u64; max_cpu_id + 1];
+        let mut last_check_time = get_ktime_ns();
         let mut last_thread_run: std::collections::HashMap<u32, u64> = std::collections::HashMap::new();
-
-        // debug 日志计数器，每 25 个 tick (~5秒) 输出一次
         let mut log_counter: u32 = 0;
-
-        // 轮询周期：200ms
+        
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(200));
         
         loop {
             interval.tick().await;
-            let now = Instant::now();
-            let real_delta_ns = now.duration_since(last_check_time).as_nanos() as u64;
-            last_check_time = now;
+            let now_ktime = get_ktime_ns();
+            let real_delta_ns = now_ktime.saturating_sub(last_check_time);
+            last_check_time = now_ktime;
 
             if real_delta_ns == 0 { continue; }
 
-            let mut core_utils = Vec::with_capacity(num_cpus);
-
-            // 1. 从 PERCPU_ARRAY 读取所有 CPU 的空闲时间和忙碌时间
             let zero_key: u32 = 0;
             let per_cpu_idle_values = core_idle_map.get(&zero_key, 0);
             let per_cpu_busy_values = core_busy_map.get(&zero_key, 0);
+            let per_cpu_last_time = core_last_time_map.get(&zero_key, 0);
+            let per_cpu_current_tid = core_current_tid_map.get(&zero_key, 0);
 
-            for cpu_id in 0..num_cpus {
-                let current_idle = per_cpu_idle_values.as_ref()
-                    .ok()
-                    .and_then(|vals| vals.get(cpu_id).copied())
-                    .unwrap_or(0);
+            let mut core_utils = Vec::with_capacity(online_cpus_list.len());
 
-                let current_busy = per_cpu_busy_values.as_ref()
-                    .ok()
-                    .and_then(|vals| vals.get(cpu_id).copied())
-                    .unwrap_or(0);
+            // 1. 全局单核利用率计算（带有实时状态补偿）
+            for &cpu_id in &online_cpus_list {
+                let idx = cpu_id as usize;
+                
+                let raw_idle = per_cpu_idle_values.as_ref().ok().and_then(|v| v.get(idx)).copied().unwrap_or(0);
+                let raw_busy = per_cpu_busy_values.as_ref().ok().and_then(|v| v.get(idx)).copied().unwrap_or(0);
+                let last_switch_time = per_cpu_last_time.as_ref().ok().and_then(|v| v.get(idx)).copied().unwrap_or(0);
+                let current_tid = per_cpu_current_tid.as_ref().ok().and_then(|v| v.get(idx)).copied().unwrap_or(0);
 
-                let last_idle = last_idle_times[cpu_id];
-                let last_busy = last_busy_times[cpu_id];
+                let mut adj_idle = raw_idle;
+                let mut adj_busy = raw_busy;
 
-                // 用 busy / (busy + idle) 代替 (wall - idle) / wall
-                // 这样当核心处于深度休眠时，busy_delta 和 idle_delta 都为 0，
-                // observed_total == 0，利用率正确地返回 0% 而不是 100%
-                let idle_delta = current_idle.saturating_sub(last_idle);
-                let busy_delta = current_busy.saturating_sub(last_busy);
-                let observed_total = idle_delta + busy_delta;
+                // 计算当前正在执行的任务积累但未触发 sched_switch 的时间
+                let mut pending_delta = now_ktime.saturating_sub(last_switch_time);
+                if pending_delta > 1_000_000_000 { 
+                    pending_delta = 0; // 防御性保护，剔除极大异常值
+                }
 
-                let util = if observed_total > 0 {
-                    // 有 sched_switch 事件覆盖的时间段，用直接比值
-                    (busy_delta as f32 / observed_total as f32).clamp(0.0, 1.0)
+                if current_tid == 0 {
+                    adj_idle += pending_delta;
                 } else {
-                    // idle 和 busy 都没增长 -> 核心在深度休眠 (C3/power collapse) -> 0%
+                    adj_busy += pending_delta;
+                }
+
+                let idle_diff = adj_idle.saturating_sub(last_idle_times[idx]);
+                let busy_diff = adj_busy.saturating_sub(last_busy_times[idx]);
+                let total_diff = idle_diff + busy_diff;
+
+                let util = if total_diff > 0 {
+                    (busy_diff as f32 / total_diff as f32).clamp(0.0, 1.0)
+                } else {
                     0.0
                 };
 
                 core_utils.push(util);
-                last_idle_times[cpu_id] = current_idle;
-                last_busy_times[cpu_id] = current_busy;
+                last_idle_times[idx] = adj_idle;
+                last_busy_times[idx] = adj_busy;
             }
 
-            // 2. 计算前台应用最重线程的利用率
+            // 2. 前台应用最重线程的利用率计算（带有实时状态补偿）
             let foreground_max_util = {
                 let fg_pid = shared_pid.load(Ordering::Relaxed);
                 if fg_pid == 0 {
@@ -157,29 +172,41 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
                     let mut max_util: f32 = 0.0;
                     let mut current_thread_run = std::collections::HashMap::with_capacity(tids.len());
 
-                    for tid in &tids {
-                        let current_run = thread_run_map.get(tid, 0).unwrap_or(0);
-                        current_thread_run.insert(*tid, current_run);
+                    for &tid in &tids {
+                        let mut adj_thread_time = thread_run_map.get(&tid, 0).unwrap_or(0);
 
-                        if let Some(&last_run) = last_thread_run.get(tid) {
-                            if current_run >= last_run {
-                                let thread_delta = current_run - last_run;
+                        // 如果该线程正在某个核心上跑，补上它的 Pending Delta
+                        for &cpu_id in &online_cpus_list {
+                            let idx = cpu_id as usize;
+                            let current_tid_on_core = per_cpu_current_tid.as_ref().ok().and_then(|v| v.get(idx)).copied().unwrap_or(0);
+                            
+                            if current_tid_on_core == tid {
+                                let last_switch_time = per_cpu_last_time.as_ref().ok().and_then(|v| v.get(idx)).copied().unwrap_or(0);
+                                let pending_delta = now_ktime.saturating_sub(last_switch_time);
+                                if pending_delta < 1_000_000_000 {
+                                    adj_thread_time += pending_delta;
+                                }
+                            }
+                        }
+
+                        current_thread_run.insert(tid, adj_thread_time);
+
+                        if let Some(&last_run) = last_thread_run.get(&tid) {
+                            if adj_thread_time >= last_run {
+                                let thread_delta = adj_thread_time - last_run;
                                 let util = (thread_delta as f32 / real_delta_ns as f32).clamp(0.0, 1.0);
                                 if util > max_util {
                                     max_util = util;
                                 }
                             }
                         }
-                        // 如果是新出现的线程（没有 last_run），这个周期跳过，下一个周期才有基线
                     }
                     
-                    // 替换为本轮的快照，用于下次 diff
                     last_thread_run = current_thread_run;
                     max_util
                 }
             };
 
-            // 3. 周期性 debug 日志（每 25 个 tick ~5秒）
             log_counter += 1;
             if log_counter % 25 == 0 {
                 debug!("CPU monitor: cores=[{}] fg_pid={} fg_max_util={:.1}% threads_tracked={} delta={}ms",
@@ -193,7 +220,6 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
                     real_delta_ns / 1_000_000);
             }
 
-            // 4. 将全局状态发给调度器
             if tx.send(DaemonEvent::SystemLoadUpdate {
                 core_utils,
                 foreground_max_util,

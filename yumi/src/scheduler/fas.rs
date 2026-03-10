@@ -15,7 +15,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::scheduler::config::Config;
 use crate::monitor::config::{
     FasRulesConfig, ClusterProfile, PerAppProfile,
 };
@@ -23,7 +22,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Write, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use log::{info, warn, debug};
+use log::{info, warn};
 
 // ════════════════════════════════════════════════════════════════
 //  FastWriter — 带去重 + unmount 的 sysfs 写入器
@@ -918,10 +917,9 @@ impl FasController {
     //  load_policies — 初始化
     // ════════════════════════════════════════════════════════════
 
-    pub fn load_policies(&mut self, config: &Config, fas_rules: &FasRulesConfig) {
+    pub fn load_policies(&mut self, fas_rules: &FasRulesConfig) {
         self.policies.clear();
         self.cfg = fas_rules.clone();
-        // 迁移旧的 per_app_margins
         self.cfg.migrate_legacy_margins();
 
         self.pid = PidController::new(fas_rules.pid.kp, fas_rules.pid.ki, fas_rules.pid.kd);
@@ -934,23 +932,20 @@ impl FasController {
         let _ = crate::utils::try_write_file("/sys/module/perfmgr/parameters/perfmgr_enable", "0");
         let _ = crate::utils::try_write_file("/sys/module/mtk_fpsgo/parameters/perfmgr_enable", "0");
 
-        let ci = &config.core_framework;
-        let clusters = [ci.small_core_path, ci.medium_core_path,
-                        ci.big_core_path, ci.super_big_core_path];
+        // [修改项] 动态拉取 CPU policy 列表
+        let clusters = crate::scheduler::get_cpu_policies();
 
         let auto_w = if fas_rules.auto_capacity_weight {
             auto_compute_capacity_weights(&clusters).map(|w| {
                 info!("FAS: auto capacity:");
                 for &(pid, wt) in &w {
-                    info!("  P{}: cap={} → w={:.2}", pid,
-                        probe_policy_capacity(pid).unwrap_or(0), wt);
+                    info!("  P{}: cap={} → w={:.2}", pid, probe_policy_capacity(pid).unwrap_or(0), wt);
                 }
                 w
             })
         } else { None };
 
         for (idx, &pid) in clusters.iter().enumerate() {
-            if pid == -1 { continue; }
             let _ = crate::utils::try_write_file(
                 &format!("/sys/devices/system/cpu/cpufreq/policy{}/scaling_governor", pid),
                 "performance");
@@ -977,21 +972,12 @@ impl FasController {
                 .map(|&(_, w)| ClusterProfile { capacity_weight: w })
                 .unwrap_or_else(|| fas_rules.cluster_profiles.get(idx).cloned().unwrap_or_default());
 
-            if !mw.is_valid() || !nw.is_valid() {
-                warn!("FAS[P{}] sysfs writer invalid, freq control may fail!", pid);
-            }
+            info!("FAS[P{}] {}-{} MHz | w={:.2}", pid, freqs.first().unwrap()/1000, max_f/1000, profile.capacity_weight);
 
-            info!("FAS[P{}] {}-{} MHz | w={:.2}", pid,
-                freqs.first().unwrap()/1000, max_f/1000,
-                profile.capacity_weight);
-
-            self.policies.push(PolicyController::new(
-                mw, nw, freqs, pid as usize, profile, max_f,
-            ));
+            self.policies.push(PolicyController::new(mw, nw, freqs, pid as usize, profile, max_f));
         }
 
-        self.current_target_fps = *self.fps_gears.iter()
-            .reduce(|a, b| if a > b { a } else { b }).unwrap_or(&60.0);
+        self.current_target_fps = *self.fps_gears.iter().reduce(|a, b| if a > b { a } else { b }).unwrap_or(&60.0);
         self.reset_runtime();
         self.refresh_cached_values();
         self.init_time = Instant::now();
@@ -999,11 +985,7 @@ impl FasController {
         self.temp_threshold = fas_rules.core_temp_threshold;
         self.apply_freqs();
 
-        info!("FAS init | {:.0}fps margin:{:.1} clusters:{} P:{:.2} profiles:{}",
-            self.current_target_fps, self.fps_margin, self.policies.len(),
-            self.perf_index, self.cfg.per_app_profiles.len());
-        info!("FAS PID  | Kp={:.4} Ki={:.4} Kd={:.4}",
-            self.cfg.pid.kp, self.cfg.pid.ki, self.cfg.pid.kd);
+        info!("FAS init | {:.0}fps clusters:{} P:{:.2}", self.current_target_fps, self.policies.len(), self.perf_index);
     }
 
     // ════════════════════════════════════════════════════════════
