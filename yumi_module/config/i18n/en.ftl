@@ -89,7 +89,7 @@ fas-low-perf-upgrade = [FAS] low-load steady frame upgrade | P={ $perf } avg={ $
 fas-downgrade-boost = [FAS] downgrade boost | avg:{ $avg } | P { $old } -> { $new } (inc={ $inc })
 fas-boost-expired = [FAS] boost expired, fast-tracking downgrade (confirm={ $confirm })
 fas-floor-rescue = [FAS] floor-rescue | stuck { $frames } frames at P={ $old }, avg:{ $avg } -> P:{ $new }
-fas-tick-log = [FAS] { $target }fps avg:{ $avg } | { $ms }ms ema:{ $ema } | err:{ $err_ema }/{ $err_inst } | { $act } | P:{ $perf } fg_util:{ $util }{ $cd }{ $damp }{ $temp }
+fas-tick-log = [FAS] { $target }fps avg:{ $avg } | { $ms }ms ema:{ $ema } | err:{ $err_ema }/{ $err_inst } | { $act } | P:{ $perf } fg_util:{ $util }{ $cd }{ $damp }{ $temp }{ $offset }
 fas-set-game = [FAS] set_game | pkg={ $pkg } | gears={ $gears } | target={ $target }fps
 fas-no-profile = [FAS] no per-app profile for '{ $pkg }', using global gears { $gears }
 fas-ignore-write = [FAS] P{ $pid } ignore_write = { $ignore }

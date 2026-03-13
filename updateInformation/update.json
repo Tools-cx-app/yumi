@@ -1,6 +1,6 @@
 {
-  "version": "v1.0.4", 
-  "versionCode": 10004,
-  "zipUrl": "https://github.com/imacte/yumi/releases/download/yumi-v1.0.4/yumi-20260313-1146.zip",
+  "version": "v1.0.5", 
+  "versionCode": 10005,
+  "zipUrl": "https://github.com/imacte/yumi/releases/download/yumi-v1.0.5/yumi-20260313-1738.zip",
   "changelog": "https://raw.githubusercontent.com/imacte/yumi/main/updateInformation/changelog.md"
 }

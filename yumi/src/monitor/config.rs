@@ -28,13 +28,20 @@ use crate::common;
 pub fn get_rules_path() -> PathBuf { common::get_module_root().join("rules.yaml") }
 
 // ════════════════════════════════════════════════════════════════
-//  PID 系数
+//  PID 系数 (60fps 基准值，运行时根据 target_fps 动态缩放)
+//
+//  kp: 比例增益 — 按 target_fps/60 线性缩放
+//  ki: 积分增益 — 按 sqrt(target_fps/60) 缩放（防高刷积分饱和）
+//  kd: 微分增益 — 按 (target_fps/60)^0.3 缩放（高刷噪声大）
 // ════════════════════════════════════════════════════════════════
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PidCoefficients {
+    /// 比例增益基准 (60fps)，高刷时自动放大
     #[serde(default = "default_kp")]  pub kp: f32,
+    /// 积分增益基准 (60fps)，高刷时缓增
     #[serde(default = "default_ki")]  pub ki: f32,
+    /// 微分增益基准 (60fps)，高刷时微增
     #[serde(default = "default_kd")]  pub kd: f32,
 }
 fn default_kp() -> f32 { 0.050 }

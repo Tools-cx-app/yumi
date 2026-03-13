@@ -119,7 +119,7 @@ impl PolicyController {
     }
 
     fn do_verify_freq(&mut self, write_freq: u32) {
-        // [Fix] 缩短校验间隔：3秒→1.5秒，更快发现内核频率覆写
+        // 缩短校验间隔：3秒→1.5秒，更快发现内核频率覆写
         // 日志中104次freq mismatch说明内核覆写非常频繁
         let verify_interval = std::time::Duration::from_millis(1500);
         if self.verify_timer.elapsed() >= verify_interval {
@@ -265,21 +265,59 @@ impl FpsWindow {
 // ════════════════════════════════════════════════════════════════
 
 struct PidController {
+    // 用户配置的基准系数 (基于 60fps 场景调优)
+    base_kp: f32, base_ki: f32, base_kd: f32,
+    // 运行时实际使用的动态系数 (根据 target_fps 和场景自动缩放)
     kp: f32, ki: f32, kd: f32,
     integral: f32, prev_error: f32,
     filtered_deriv: f32,
     integral_limit: f32,
+    // 缓存当前适配的目标帧率，避免重复计算
+    adapted_fps: f32,
 }
 
 impl PidController {
     fn new(kp: f32, ki: f32, kd: f32) -> Self {
-        Self { kp, ki, kd, integral: 0.0, prev_error: 0.0,
-               filtered_deriv: 0.0, integral_limit: 0.15 }
+        Self {
+            base_kp: kp, base_ki: ki, base_kd: kd,
+            kp, ki, kd,
+            integral: 0.0, prev_error: 0.0,
+            filtered_deriv: 0.0, integral_limit: 0.15,
+            adapted_fps: 60.0,
+        }
     }
 
-    fn compute(&mut self, error: f32, inst_error: f32, norm: f32) -> f32 {
-        // 对 norm 做完整的安全区间限制，防止极端 target_fps 值导致
-        // integral 积分、leak 系数、微分除法出现异常数值
+    /// 根据 target_fps 动态缩放 PID 系数
+    ///
+    /// 核心思想:
+    /// 高刷下帧间隔 budget 更短 (144fps → 6.9ms vs 60fps → 16.7ms)，
+    /// 同样 1ms 的帧时间偏差在高刷下"严重程度"更高，
+    /// 因此 P/I/D 三个通道的增益都需要随 target_fps 缩放，
+    /// 但缩放系数不同：P 最激进，D 最保守 (高刷噪声大)。
+    fn adapt_to_target_fps(&mut self, target_fps: f32) {
+        if (target_fps - self.adapted_fps).abs() < 0.5 { return; }
+        self.adapted_fps = target_fps;
+
+        let ratio = target_fps / 60.0;
+        // kp: 线性缩放 — 高刷时每 ms 偏差代表更大的帧率损失
+        self.kp = self.base_kp * ratio;
+        // ki: sqrt 缩放 — 高刷帧多，积分器积累更快，弱化以防过冲
+        self.ki = self.base_ki * ratio.sqrt();
+        // kd: 保守 0.3 次幂 — 高刷帧间噪声更大，微分项放大噪声
+        self.kd = self.base_kd * ratio.powf(0.3);
+
+        // 积分限幅：高刷下缩小，防止积分器饱和导致频率虚高
+        self.integral_limit = 0.15 * (60.0 / target_fps.max(1.0)).sqrt();
+        // 不 reset 积分器（保持连续性），只做 clamp
+        self.integral = self.integral.clamp(-self.integral_limit, self.integral_limit);
+    }
+
+    /// 带利用率感知的 PID 计算
+    ///
+    /// 当前台线程 CPU 利用率很低时，说明瓶颈不在 CPU（可能是 GPU bound
+    /// 或 IO bound），此时 PID 拉频不会改善帧率，反而白给功耗。
+    /// 通过 util_gain 衰减 P 项增益，避免无效拉频。
+    fn compute(&mut self, error: f32, inst_error: f32, norm: f32, fg_util: f32) -> f32 {
         let safe_norm = norm.clamp(0.5, 2.5);
 
         if error < 0.0 {
@@ -292,10 +330,29 @@ impl PidController {
         self.integral = self.integral.clamp(-dyn_limit, dyn_limit);
 
         let raw_deriv = (error - self.prev_error) / safe_norm;
-        self.filtered_deriv = self.filtered_deriv * 0.7 + raw_deriv * 0.3;
+        // 动态低通滤波：高刷下帧间微小抖动（调度噪声）在微秒级被放大，
+        // 固定 0.7/0.3 滤波器在 144fps 下无法有效抑制。
+        // alpha 随 target_fps 升高而降低：60fps=0.30, 120fps=0.21, 144fps=0.19
+        // 使 D 项在高刷下更加平滑，避免输出高频震荡。
+        let d_alpha = (0.30 * (60.0 / self.adapted_fps.max(1.0)).sqrt()).clamp(0.10, 0.30);
+        self.filtered_deriv = self.filtered_deriv * (1.0 - d_alpha) + raw_deriv * d_alpha;
         self.prev_error = error;
 
-        self.kp * inst_error + self.ki * self.integral + self.kd * self.filtered_deriv
+        // 利用率感知增益调制
+        // fg_util < 0.30 → GPU/IO bound，PID 增频无效，衰减 P 项
+        // fg_util ∈ [0.30, 1.0] → CPU bound，正常增益
+        // fg_util 无数据 (≤ 0.01) → 刚启动还没采样到，不衰减
+        let util_gain = if fg_util > 0.01 && fg_util < 0.30 {
+            0.3 + fg_util * 2.3  // 0.3 ~ 0.99
+        } else {
+            1.0
+        };
+
+        let p_term = self.kp * inst_error * util_gain;
+        let i_term = self.ki * self.integral;
+        let d_term = self.kd * self.filtered_deriv;
+
+        p_term + i_term + d_term
     }
 
     fn reset(&mut self) {
@@ -303,7 +360,11 @@ impl PidController {
     }
 
     fn update_coefficients(&mut self, kp: f32, ki: f32, kd: f32) {
-        self.kp = kp; self.ki = ki; self.kd = kd;
+        self.base_kp = kp; self.base_ki = ki; self.base_kd = kd;
+        // 重新按当前 adapted_fps 缩放
+        let fps = self.adapted_fps;
+        self.adapted_fps = 0.0; // 强制刷新
+        self.adapt_to_target_fps(fps);
         self.reset();
     }
 }
@@ -433,6 +494,18 @@ pub struct FasController {
 
     // util_cap EMA 平滑值，防止 200ms 采样周期的滞后数据造成断崖
     ema_fg_util: f32,
+
+    // [Jank 恢复保护] crit/heavy 后的 perf 最低值保护
+    // 防止恢复帧到来后 PID 在 2-3 帧内将 perf 从 1.0 衰减到 floor，
+    // 导致后续帧频率不足再次 jank 形成连锁掉帧
+    post_jank_perf_floor: f32,
+    post_jank_guard_frames: u32,
+
+    // [动态 PID] 基于 CPU 利用率的 target_fps 偏移
+    // 范围 [-3.0, 0.0]：当 CPU 利用率持续偏低时逐步降低有效 target_fps，
+    // 让 PID 少给频率，节省功耗；利用率回升时逐步恢复
+    target_fps_offset: f32,
+    util_sample_timer: Instant,
 }
 
 impl FasController {
@@ -481,6 +554,10 @@ impl FasController {
             active_profile: None,
             floor_stuck_frames: 0,
             ema_fg_util: 0.0,
+            post_jank_perf_floor: 0.0,
+            post_jank_guard_frames: 0,
+            target_fps_offset: 0.0,
+            util_sample_timer: Instant::now(),
             cfg,
         }
     }
@@ -492,7 +569,7 @@ impl FasController {
     /// 更新前台最重线程的 CPU 利用率
     pub fn update_cpu_util(&mut self, fg_util: f32) {
         self.foreground_max_util = fg_util;
-        // [Fix] EMA smooth fg_util to prevent 200ms sampling lag causing cliff drops
+        // EMA smooth fg_util to prevent 200ms sampling lag causing cliff drops
         if self.ema_fg_util <= 0.001 {
             self.ema_fg_util = fg_util;
         } else {
@@ -515,11 +592,18 @@ impl FasController {
     /// 获取有效 perf_floor —— 根据目标帧率动态抬高地板
     /// 高刷游戏 (120/144fps) 的 budget 仅 6.9~8.3ms，perf 过低会导致
     /// CPU 频率不足以在 budget 内渲染完一帧，任何突发负载都立刻卡顿。
-    /// 公式: floor = base_floor + (target_fps - 60) * 0.003，上限 0.35
+    ///
+    /// 旧公式硬顶 0.35，导致 120fps 下 perf 完全贴地运行(日志中稳态P=0.350)，
+    /// 遇到突发负载需要多帧才能爬升到足够频率，造成可感知卡顿。
+    /// 新公式: floor = base + (target_fps - 60) * 0.004, 上限 0.45
+    ///   60fps  → 0.22 (不变)
+    ///   90fps  → 0.34
+    ///   120fps → 0.40 (原 0.35，多出 5% headroom)
+    ///   144fps → 0.45 (原 0.35)
     fn effective_perf_floor(&self) -> f32 {
         let base = self.cfg.perf_floor;
-        let fps_bonus = ((self.current_target_fps - 60.0).max(0.0) * 0.003).min(0.17);
-        (base + fps_bonus).min(0.35)
+        let fps_bonus = ((self.current_target_fps - 60.0).max(0.0) * 0.004).min(0.25);
+        (base + fps_bonus).min(0.45)
     }
 
     /// 获取有效 perf_ceil
@@ -553,6 +637,40 @@ impl FasController {
         self.cached_norm = fps_norm(self.current_target_fps);
         self.cached_budget_ms = 1000.0 / self.current_target_fps.max(1.0);
         self.cached_ema_budget = 1000.0 / (self.current_target_fps - self.fps_margin).max(1.0);
+        // 动态适配 PID 系数到当前 target_fps
+        self.pid.adapt_to_target_fps(self.current_target_fps);
+    }
+
+    /// 基于 CPU 利用率动态偏移 target_fps
+    ///
+    /// 每秒采样一次 ema_fg_util：
+    ///   util ≤ 0.10 → 重置偏移 (可能在菜单/暂停画面)
+    ///   util ≤ 0.55 → 逐步降低 target (-0.1/s)，最多 -3fps
+    ///   util ≥ 0.65 → 逐步恢复 (+0.1/s) 至 0
+    ///
+    /// 效果：GPU bound 场景自动放宽帧率目标，减少无效拉频
+    fn adjust_target_for_util(&mut self) {
+        if self.util_sample_timer.elapsed().as_millis() < 1000 { return; }
+        self.util_sample_timer = Instant::now();
+
+        // jank_cooldown 期间禁止降低 target，只允许恢复
+        // 防止刚从团战卡顿恢复，util 还没爬满就又把目标降下去
+        let allow_decrease = self.jank_cooldown == 0 && self.jank_streak == 0;
+
+        let util = self.ema_fg_util;
+        if util <= 0.10 {
+            self.target_fps_offset = 0.0;
+        } else if util <= 0.55 && allow_decrease {
+            self.target_fps_offset = (self.target_fps_offset - 0.1).max(-3.0);
+        } else if util >= 0.65 {
+            self.target_fps_offset = (self.target_fps_offset + 0.1).min(0.0);
+        }
+    }
+
+    /// 获取经过 util 偏移后的有效 target_fps
+    #[inline]
+    fn effective_target_fps(&self) -> f32 {
+        (self.current_target_fps + self.target_fps_offset).max(10.0)
     }
 
     fn detect_native_gear(&self, avg_fps: f32) -> Option<f32> {
@@ -584,6 +702,12 @@ impl FasController {
         self.downgrade_boost_active = false;
         self.downgrade_boost_remaining = 0;
         self.floor_stuck_frames = 0;
+        // 齿轮切换是重大状态变更，重置 util 偏移让 PID 从零开始适应新档位
+        self.target_fps_offset = 0.0;
+        self.util_sample_timer = Instant::now();
+        // 齿轮切换后清除 jank 保护（新档位有自己的 perf 基线）
+        self.post_jank_perf_floor = 0.0;
+        self.post_jank_guard_frames = 0;
         info!("{}", t_with_args("fas-gear-switch", &fluent_args!(
             "old" => format!("{:.0}", old),
             "new" => format!("{:.0}", new_fps),
@@ -620,6 +744,10 @@ impl FasController {
         self.freq_force_counter = 0;
         self.floor_stuck_frames = 0;
         self.ema_fg_util = 0.0;
+        self.post_jank_perf_floor = 0.0;
+        self.post_jank_guard_frames = 0;
+        self.target_fps_offset = 0.0;
+        self.util_sample_timer = Instant::now();
     }
 
     fn cancel_boost(&mut self) {
@@ -676,6 +804,7 @@ impl FasController {
         self.foreground_max_util = 0.0;
         self.ema_fg_util = 0.0;
         self.core_utils.clear();
+        self.target_fps_offset = 0.0;
         // 恢复全局 margin 和 gears
         if let Ok(m) = self.cfg.fps_margin.parse::<f32>() { self.fps_margin = m; }
         self.fps_gears = self.cfg.fps_gears.clone();
@@ -1172,7 +1301,7 @@ impl FasController {
                 } else if self.downgrade_boost_active && self.downgrade_boost_remaining > 0 {
                     self.downgrade_boost_remaining -= 1;
                     if self.downgrade_boost_remaining == 0 {
-                        // [Fix] Gradual decay instead of instant cliff restore
+                        // Gradual decay instead of instant cliff restore
                         let blended = self.perf_index * 0.70 + self.downgrade_boost_perf_saved * 0.30;
                         self.perf_index = blended.max(self.downgrade_boost_perf_saved);
                         self.downgrade_boost_active = false;
@@ -1215,11 +1344,16 @@ impl FasController {
 
     fn update_pid_and_jank(&mut self, actual_ms: f32) -> &'static str {
         let norm = self.cached_norm;
-        let budget_ms = self.cached_budget_ms;
-        let ema_budget = self.cached_ema_budget;
         let damped = self.gear_dampen_frames > 0;
         let floor = self.effective_perf_floor();
         let ceil = self.effective_perf_ceil();
+
+        // [动态 PID] 使用 util 偏移后的有效 target 计算 budget
+        // 齿轮判断仍用原始 target_fps，但 PID 控制用偏移后的目标
+        // 这样 GPU bound 场景下 PID 的 error 更小，输出更保守
+        let eff_target = self.effective_target_fps();
+        let budget_ms = 1000.0 / eff_target.max(1.0);
+        let ema_budget = 1000.0 / (eff_target - self.fps_margin).max(1.0);
 
         let ema_err = ema_budget - self.ema_actual_ms;
         let inst_err = budget_ms - actual_ms;
@@ -1241,6 +1375,27 @@ impl FasController {
             act = "crit";
             self.consecutive_normal_frames = 0;
             self.jank_cooldown = scale_frames(self.cfg.jank_cooldown_frames * 3, self.current_target_fps);
+            // 紧急避险：Jank 发生时立刻重置 util 偏移，
+            // 恢复严格的 target_fps 目标，避免 PID 在团战突发时还在"偷懒"
+            self.target_fps_offset = 0.0;
+            self.util_sample_timer = Instant::now(); // 防止下次 tick 立刻重新降低
+
+            // [紧急跳频] 超大帧 (>50ms, 即掉了 6+ 个 120fps vsync) 直接跳到较高 perf，
+            // 不走渐进式爬升，因为按 max_inc ≈ 0.09/帧 从 floor=0.40 爬到 0.70 需要 3-4 帧，
+            // 在 120fps 下意味着 25-33ms 的额外卡顿窗口。
+            if actual_ms > 50.0 && self.perf_index < 0.70 {
+                self.perf_index = 0.70;
+            }
+
+            // [Jank 恢复保护] 设置 post-jank perf 地板：
+            // crit 后 PID 会在恢复帧 (error 变正) 立刻走 pid-decay，
+            // 原版 3 帧内 1.0→0.35，频率断崖导致后续帧再次 jank。
+            // 保护期内 perf 不会低于此值，给出平滑衰减窗口。
+            let guard_perf = (self.perf_index * 0.55).max(0.50);
+            if guard_perf > self.post_jank_perf_floor {
+                self.post_jank_perf_floor = guard_perf;
+            }
+            self.post_jank_guard_frames = scale_frames(60, self.current_target_fps);
         } else if ema_err < -heavy_ms {
             self.jank_streak += 1;
             let streak_m = (1.0 - (-0.35 * self.jank_streak as f32).exp()).clamp(0.30, 0.70);
@@ -1252,17 +1407,46 @@ impl FasController {
             let fps_cd_scale = (self.current_target_fps / 60.0).clamp(1.0, 2.5);
             self.jank_cooldown = self.jank_cooldown.max(
                 (scale_frames(self.cfg.jank_cooldown_frames, self.current_target_fps) as f32 * fps_cd_scale) as u32);
+            // heavy jank 也重置偏移，但只在偏移较大时才强制重置
+            if self.target_fps_offset < -1.0 {
+                self.target_fps_offset = 0.0;
+                self.util_sample_timer = Instant::now();
+            }
+
+            // [Jank 恢复保护] heavy 也设置保护地板，但比 crit 保守一些
+            let guard_perf = (self.perf_index * 0.50).max(0.45);
+            if guard_perf > self.post_jank_perf_floor {
+                self.post_jank_perf_floor = guard_perf;
+            }
+            self.post_jank_guard_frames = self.post_jank_guard_frames.max(
+                scale_frames(30, self.current_target_fps));
         } else {
             self.jank_streak = 0;
             self.consecutive_normal_frames += 1;
-            let raw = self.pid.compute(ema_err, inst_err, norm);
+            // jank_cooldown 期间传入 0.0 让 util_gain=1.0，
+            // 确保从卡顿恢复的过渡期 PID 全力拉频，不被旧的低 util 数据拖后腿
+            let pid_util = if self.jank_cooldown > 0 { 0.0 } else { self.ema_fg_util };
+            let raw = self.pid.compute(ema_err, inst_err, norm, pid_util);
             if raw > 0.0 {
                 let d = if self.downgrade_boost_active { 0.0 } else { 1.0 };
                 let floor_guard = if self.perf_index < floor + 0.15 { 0.3 } else { 1.0 };
-                self.perf_index -= raw * d * norm * floor_guard;
+                // 目标分裂安全护栏：
+                // 当 target_fps_offset < 0 时，PID 的 effective target 低于齿轮的 raw target。
+                // 如果实际 fps 低于 raw target，PID 不应该认为"任务完成"而激进衰减，
+                // 否则齿轮看到 perf_index 过低会产生假升档/震荡。
+                // 此时把衰减力度降到 30%，让 perf 缓慢下降而非断崖。
+                let avg = self.fps_window.mean();
+                let split_guard = if self.target_fps_offset < -0.5
+                    && avg < self.current_target_fps - 1.0
+                    && avg > self.effective_target_fps() - 1.0
+                { 0.3 } else { 1.0 };
+                self.perf_index -= raw * d * norm * floor_guard * split_guard;
                 act = "pid-decay";
             } else {
-                let jd = if self.jank_cooldown > 0 { 0.70 } else { 1.0 };
+                // jank_cooldown 期间 PID 增频力度大幅衰减 (0.25)，
+                // 防止恢复帧到来后 perf 在 2-3 帧内从高位断崖回落。
+                // 原值 0.70 太激进，日志显示 crit 后 P 从 1.0 → 0.35 仅需 3 帧。
+                let jd = if self.jank_cooldown > 0 { 0.25 } else { 1.0 };
                 let bd = if self.downgrade_boost_active { 0.0 } else { 1.0 };
                 let dd = if damped { 0.5 } else { 1.0 };
                 self.perf_index += (-raw) * jd * bd * dd * norm;
@@ -1309,11 +1493,28 @@ impl FasController {
             self.floor_stuck_frames = 0;
         }
 
-        // Clamp (使用场景 override 的范围)
-        self.perf_index = self.perf_index.clamp(floor, ceil);
+        // [Jank 恢复保护] 在保护期内抬高 perf 下限，防止断崖衰减
+        let effective_floor = if self.post_jank_guard_frames > 0 {
+            self.post_jank_guard_frames -= 1;
+            // 保护地板随时间线性衰减到 base floor，提供平滑过渡
+            let guard_ratio = self.post_jank_guard_frames as f32
+                / scale_frames(60, self.current_target_fps).max(1) as f32;
+            let decaying_guard = floor + (self.post_jank_perf_floor - floor) * guard_ratio;
+            floor.max(decaying_guard)
+        } else {
+            floor
+        };
+
+        // Clamp (使用场景 override 的范围 + jank 保护地板)
+        self.perf_index = self.perf_index.clamp(effective_floor, ceil);
         // base * (fps/60)^0.3，高刷时允许更大的单帧增量。
         let scale = (self.current_target_fps / 60.0).powf(0.3).clamp(0.8, 1.8);
-        let max_inc = if damped {
+        // crit 和 emergency 不受常规 max_inc 限制，允许单帧大幅拉升
+        // 原版 max_inc ≈ 0.092 在 120fps 下需要 7-8 帧才能从 floor 爬到 1.0，
+        // 超大帧(139ms)已经卡了 16+ 个 vsync，不能再用渐进式爬升
+        let max_inc = if act == "crit" || act == "emergency-inc" {
+            (self.cfg.max_inc_normal * scale * 2.5).max(0.15)
+        } else if damped {
             (self.cfg.max_inc_damped * scale).max(0.040)
         } else {
             (self.cfg.max_inc_normal * scale).max(0.065)
@@ -1432,6 +1633,9 @@ impl FasController {
         // Phase 4: EMA
         self.update_ema(actual_ms, avg_fps);
 
+        // Phase 4.5: 动态 target_fps 偏移
+        self.adjust_target_for_util();
+
         // Phase 5: PID + Jank
         let act = self.update_pid_and_jank(actual_ms);
 
@@ -1442,8 +1646,9 @@ impl FasController {
         // 心跳日志
         self.log_counter = self.log_counter.wrapping_add(1);
         if self.log_counter % 30 == 0 {
-            let ema_err = self.cached_ema_budget - self.ema_actual_ms;
-            let inst_err = self.cached_budget_ms - actual_ms;
+            let eff_target = self.effective_target_fps();
+            let ema_err = 1000.0 / (eff_target - self.fps_margin).max(1.0) - self.ema_actual_ms;
+            let inst_err = 1000.0 / eff_target.max(1.0) - actual_ms;
             info!("{}", t_with_args("fas-tick-log", &fluent_args!(
                 "target" => format!("{:.0}", self.current_target_fps),
                 "avg" => format!("{:.1}", avg_fps),
@@ -1456,7 +1661,8 @@ impl FasController {
                 "util" => format!("{:.2}", self.foreground_max_util),
                 "cd" => if self.upgrade_cooldown > 0 { " cd" } else { "" },
                 "damp" => if self.gear_dampen_frames > 0 { " damp" } else { "" },
-                "temp" => if self.current_temperature > 0.0 { format!(" T:{:.0}℃", self.current_temperature) } else { "".to_string() }
+                "temp" => if self.current_temperature > 0.0 { format!(" T:{:.0}℃", self.current_temperature) } else { "".to_string() },
+                "offset" => if self.target_fps_offset.abs() > 0.05 { format!(" off:{:+.1}", self.target_fps_offset) } else { "".to_string() }
             )));
         }
 
@@ -1464,11 +1670,14 @@ impl FasController {
     }
 
     fn update_ema(&mut self, actual_ms: f32, avg_fps: f32) {
-        let budget_ms = self.cached_budget_ms;
+        // [动态 PID] 使用偏移后的目标 fps 计算 EMA baseline，
+        // 保证 EMA 和 PID 看到的 budget 一致
+        let eff_target = self.effective_target_fps();
+        let budget_ms = 1000.0 / eff_target.max(1.0);
         let norm = self.cached_norm;
         let ema_input_ms = {
             let base = if self.fps_window.count() >= 8 && avg_fps > 5.0
-                && avg_fps < self.current_target_fps * 0.50
+                && avg_fps < eff_target * 0.50
             { 1000.0 / avg_fps } else { budget_ms };
             let cap = base * 2.0;
             let extreme = base * 4.0;

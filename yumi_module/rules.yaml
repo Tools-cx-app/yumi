@@ -6,6 +6,7 @@ app_modes:
   com.miHoYo.GenshinImpact: "fas"
   com.tencent.tmgp.sgame: "fas"
   com.tencent.tmgp.speedmobile: "fas"
+  com.tencent.lolm: "fas"
 
 ignored_apps:
   - com.android.systemui
@@ -28,7 +29,7 @@ fas_rules:
       fps_margin: 3.0
 
     "com.tencent.tmgp.speedmobile":
-      target_fps: [60, 120, 144]
+      target_fps: [30, 60, 120, 144]
       fps_margin: 3.0
 
     "com.tencent.tmgp.sgame":
@@ -44,11 +45,15 @@ fas_rules:
     "com.kurogame.mingchao":
       target_fps: [24, 30, 45, 60]
 
+    "com.tencent.lolm":
+      target_fps: [60, 90, 120, 144]
+      fps_margin: 3.0
+
   # ── PID 控制器核心系数 ──
   pid:
-    kp: 0.035
-    ki: 0.015
-    kd: 0.005
+    kp: 0.05
+    ki: 0.01
+    kd: 0.006
 
   # ── 集群算力感知 ──
   auto_capacity_weight: true
