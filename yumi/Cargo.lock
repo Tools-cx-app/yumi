@@ -1315,7 +1315,6 @@ dependencies = [
  "aya",
  "aya-log",
  "bytes",
- "cc",
  "fluent",
  "fluent-bundle",
  "futures",
