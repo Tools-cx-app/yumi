@@ -39,13 +39,11 @@ pub fn get_cpu_policies() -> Vec<i32> {
     let mut policies = Vec::new();
     if let Ok(entries) = std::fs::read_dir("/sys/devices/system/cpu/cpufreq") {
         for entry in entries.flatten() {
-            if let Some(name) = entry.file_name().to_str() {
-                if name.starts_with("policy") {
-                    if let Ok(pid) = name["policy".len()..].parse::<i32>() {
+            if let Some(name) = entry.file_name().to_str()
+                && name.starts_with("policy")
+                    && let Ok(pid) = name["policy".len()..].parse::<i32>() {
                         policies.push(pid);
                     }
-                }
-            }
         }
     }
     policies.sort_unstable();
@@ -254,7 +252,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                 // 进游戏：释放 CLG 控制权，激活 FAS
                                 cpu_governor.release();
 
-                                let can_resume = fas_suspended_at.map_or(false, |at| {
+                                let can_resume = fas_suspended_at.is_some_and(|at| {
                                     at.elapsed().as_secs() < FAS_SUSPEND_GRACE_SECS && fas_suspended_package == package_name && !fas_controller.policies.is_empty()
                                 });
 
@@ -364,15 +362,14 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                 }
 
                 // 定期检查 FAS 挂起状态是否超时
-                if let Some(suspended_at) = fas_suspended_at {
-                    if suspended_at.elapsed().as_secs() >= FAS_SUSPEND_GRACE_SECS {
+                if let Some(suspended_at) = fas_suspended_at
+                    && suspended_at.elapsed().as_secs() >= FAS_SUSPEND_GRACE_SECS {
                         fas_controller.reset_all_freqs();
                         fas_controller.clear_game();
                         fas_controller.policies.clear();
                         fas_suspended_at = None;
                         fas_suspended_package.clear();
                     }
-                }
             }
             log::warn!("{}", t("scheduler-channel-closed"));
         })?;

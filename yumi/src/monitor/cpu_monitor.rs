@@ -43,11 +43,10 @@ fn get_thread_tids(pid: u32) -> Vec<u32> {
     let mut tids = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&task_dir) {
         for entry in entries.flatten() {
-            if let Some(name) = entry.file_name().to_str() {
-                if let Ok(tid) = name.parse::<u32>() {
+            if let Some(name) = entry.file_name().to_str()
+                && let Ok(tid) = name.parse::<u32>() {
                     tids.push(tid);
                 }
-            }
         }
     }
     tids
@@ -275,7 +274,7 @@ pub async fn start_cpu_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
             };
 
             log_counter += 1;
-            if log_counter % 25 == 0 {
+            if log_counter.is_multiple_of(25) {
                 let cores_str = core_utils
                     .iter()
                     .map(|u| format!("{:.0}", u * 100.0))

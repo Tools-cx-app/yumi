@@ -86,6 +86,7 @@ pub fn watch_path<P: AsRef<Path>>(path_to_watch: P) -> Result<()> {
 
     Ok(())
 }
+
 // 辅助函数：读取文件内容为 String
 pub fn read_file_content(path: &str) -> Result<String> {
     let mut content = String::new();
@@ -105,28 +106,24 @@ pub fn find_cpu_temp_path() -> Result<String> {
     for entry in fs::read_dir(thermal_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() {
-            if let Some(dir_name) = path.file_name().and_then(|s| s.to_str()) {
-                if dir_name.starts_with("thermal_zone") {
+        if path.is_dir()
+            && let Some(dir_name) = path.file_name().and_then(|s| s.to_str())
+                && dir_name.starts_with("thermal_zone") {
                     let type_path = path.join("type");
                     // 修复 E0532 模式匹配错误: 直接使用 if let Ok(...)
                     if let Ok(type_content) =
                         read_file_content(type_path.to_str().unwrap_or_default())
-                    {
-                        if type_content.contains("soc_max")
+                        && (type_content.contains("soc_max")
                             || type_content.contains("mtktscpu")
                             || type_content.contains("cpu-1-")
-                            || type_content.contains("cpu-0-0-usr")
+                            || type_content.contains("cpu-0-0-usr"))
                         {
                             let temp_path = path.join("temp");
                             if temp_path.exists() {
                                 return Ok(temp_path.to_str().unwrap().to_string());
                             }
                         }
-                    }
                 }
-            }
-        }
     }
     Err(anyhow::anyhow!("Valid CPU thermal zone not found"))
 }
@@ -149,6 +146,12 @@ pub struct SysPathExist {
     pub cpuset_root_exist: bool,
     pub cpuidle_governor_exist: bool,
     pub sda_scheduler_exist: bool,
+}
+
+impl Default for SysPathExist {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SysPathExist {
@@ -210,8 +213,8 @@ impl FastWriter {
     }
 
     fn try_unmount(path: &Path) {
-        if let Some(path_str) = path.to_str() {
-            if let Ok(cpath) = std::ffi::CString::new(path_str) {
+        if let Some(path_str) = path.to_str()
+            && let Ok(cpath) = std::ffi::CString::new(path_str) {
                 let ret = unsafe { libc::umount2(cpath.as_ptr(), libc::MNT_DETACH) };
                 if ret != 0 {
                     let errno = std::io::Error::last_os_error();
@@ -228,7 +231,6 @@ impl FastWriter {
                     }
                 }
             }
-        }
     }
 
     pub fn re_unmount(&self) {

@@ -113,7 +113,7 @@ pub async fn start_fps_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
             loop {
                 match buf.read_events(&mut buffers).await {
                     Ok(events) => {
-                        for i in 0..events.read {
+                        for (i, _) in buffers.iter().enumerate().take(events.read) {
                             let data = &buffers[i];
                             if data.len() < 12 {
                                 continue;

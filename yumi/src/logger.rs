@@ -80,8 +80,8 @@ pub fn init(level_str: &str) -> Result<()> {
 /// 动态更新日志等级
 pub fn update_level(level_str: &str) {
     let level = parse_level(level_str);
-    if let Some(mutex) = LOG_HANDLE.get() {
-        if let Ok(handle) = mutex.lock() {
+    if let Some(mutex) = LOG_HANDLE.get()
+        && let Ok(handle) = mutex.lock() {
             match build_config(level) {
                 Ok(cfg) => {
                     handle.set_config(cfg);
@@ -96,5 +96,4 @@ pub fn update_level(level_str: &str) {
                 Err(e) => eprintln!("Failed to rebuild logger config: {}", e),
             }
         }
-    }
 }

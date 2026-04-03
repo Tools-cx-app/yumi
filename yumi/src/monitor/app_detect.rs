@@ -165,11 +165,10 @@ fn get_focused_app_from_cgroup(ignored_apps: &[String]) -> Result<(String, i32),
     ];
 
     let cached = VALID_CGROUP_IDX.load(Ordering::Relaxed);
-    if cached < paths.len() {
-        if let Some(res) = check_cgroup_path(paths[cached], ignored_apps) {
+    if cached < paths.len()
+        && let Some(res) = check_cgroup_path(paths[cached], ignored_apps) {
             return Ok(res);
         }
-    }
 
     for (i, path) in paths.iter().enumerate() {
         if i == cached {
@@ -345,8 +344,8 @@ pub fn app_detection_loop(
             0.0
         };
 
-        if last_package != final_pkg || force_refresh {
-            if !final_pkg.is_empty() {
+        if (last_package != final_pkg || force_refresh)
+            && !final_pkg.is_empty() {
                 set_current_package(&final_pkg, final_pid);
                 // 使用已获取的 config_snapshot，不再重复加锁
                 let new_mode = determine_mode(&config_snapshot, &final_pkg);
@@ -370,7 +369,6 @@ pub fn app_detection_loop(
                 }
                 last_package = final_pkg;
             }
-        }
 
         thread::sleep(Duration::from_millis(1500));
     }

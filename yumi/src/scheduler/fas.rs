@@ -138,8 +138,8 @@ impl PolicyController {
         let verify_interval = std::time::Duration::from_millis(1500);
         if self.verify_timer.elapsed() >= verify_interval {
             self.verify_timer = Instant::now();
-            if let Some(expected) = self.verify_freq {
-                if let Some(actual) = self.read_current_freq() {
+            if let Some(expected) = self.verify_freq
+                && let Some(actual) = self.read_current_freq() {
                     let min_ok = self
                         .available_freqs
                         .iter()
@@ -179,7 +179,6 @@ impl PolicyController {
                         }
                     }
                 }
-            }
         }
         self.verify_freq = Some(write_freq);
     }
@@ -898,8 +897,8 @@ impl FasController {
             if let Some(m) = p.fps_margin {
                 self.fps_margin = m;
             }
-            if let Some(ref gears) = p.target_fps {
-                if !gears.is_empty() {
+            if let Some(ref gears) = p.target_fps
+                && !gears.is_empty() {
                     self.fps_gears = gears.clone();
                     if !self
                         .fps_gears
@@ -911,7 +910,6 @@ impl FasController {
                     }
                     self.refresh_cached_values();
                 }
-            }
             info!(
                 "{}",
                 t_with_args(
@@ -1054,8 +1052,8 @@ impl FasController {
                     self.fps_margin = m;
                 }
                 // 更新 target_fps 齿轮列表
-                if let Some(ref gears) = p.target_fps {
-                    if !gears.is_empty() {
+                if let Some(ref gears) = p.target_fps
+                    && !gears.is_empty() {
                         self.fps_gears = gears.clone();
                         if !self
                             .fps_gears
@@ -1066,7 +1064,6 @@ impl FasController {
                                 self.fps_gears.iter().copied().fold(60.0_f32, f32::max);
                         }
                     }
-                }
             } else {
                 // 无 per-app 配置，用全局 margin
                 if let Ok(m) = new_rules.fps_margin.parse::<f32>() {
@@ -1127,7 +1124,7 @@ impl FasController {
 
     fn apply_freqs(&mut self) {
         self.freq_force_counter = self.freq_force_counter.wrapping_add(1);
-        let force = self.freq_force_counter % self.cfg.freq_force_reapply_interval == 0;
+        let force = self.freq_force_counter.is_multiple_of(self.cfg.freq_force_reapply_interval);
 
         let mut effective_perf = self.perf_index.clamp(0.0, 1.0);
 
@@ -1210,9 +1207,9 @@ impl FasController {
         let clusters = crate::scheduler::get_cpu_policies();
 
         let auto_w = if fas_rules.auto_capacity_weight {
-            auto_compute_capacity_weights(&clusters).map(|w| {
+            auto_compute_capacity_weights(&clusters).inspect(|w| {
                 info!("{}", t("fas-auto-capacity"));
-                for &(pid, wt) in &w {
+                for &(pid, wt) in w {
                     info!(
                         "{}",
                         t_with_args(
@@ -1225,7 +1222,6 @@ impl FasController {
                         )
                     );
                 }
-                w
             })
         } else {
             None
@@ -1233,7 +1229,7 @@ impl FasController {
 
         for (idx, &pid) in clusters.iter().enumerate() {
             let _ = crate::utils::try_write_file(
-                &format!(
+                format!(
                     "/sys/devices/system/cpu/cpufreq/policy{}/scaling_governor",
                     pid
                 ),
@@ -2033,7 +2029,7 @@ impl FasController {
 
         // 心跳日志
         self.log_counter = self.log_counter.wrapping_add(1);
-        if self.log_counter % 30 == 0 {
+        if self.log_counter.is_multiple_of(30) {
             let eff_target = self.effective_target_fps();
             let ema_err = 1000.0 / (eff_target - self.fps_margin).max(1.0) - self.ema_actual_ms;
             let inst_err = 1000.0 / eff_target.max(1.0) - actual_ms;
