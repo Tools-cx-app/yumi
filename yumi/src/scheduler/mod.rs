@@ -329,7 +329,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         let current_mode = mode_clone.lock().unwrap().clone();
                         if current_mode == "fas" {
                             if !temp_sensor_path.is_empty() && last_temp_update.elapsed().as_secs() >= 3 {
-                                if let Ok(raw_temp) = crate::utils::read_f64_from_file(&temp_sensor_path) {
+                                if let Ok(raw) = utils::read_file_content(&temp_sensor_path)&&let Ok(raw_temp)=raw.parse::<f64>() {
                                     fas_controller.set_temperature(raw_temp / 1000.0);
                                 }
                                 last_temp_update = Instant::now();

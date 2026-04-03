@@ -86,15 +86,6 @@ pub fn watch_path<P: AsRef<Path>>(path_to_watch: P) -> Result<()> {
 
     Ok(())
 }
-
-// 通用的读取文件为 f64 的函数
-pub fn read_f64_from_file(path: &str) -> Result<f64> {
-    let mut content = String::new();
-    File::open(path)?.read_to_string(&mut content)?;
-    let val: f64 = content.trim().parse()?;
-    Ok(val)
-}
-
 // 辅助函数：读取文件内容为 String
 pub fn read_file_content(path: &str) -> Result<String> {
     let mut content = String::new();

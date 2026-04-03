@@ -337,7 +337,10 @@ pub fn app_detection_loop(
         }
 
         let current_temp = if !temp_sensor_path.is_empty() {
-            utils::read_f64_from_file(&temp_sensor_path).unwrap_or(0.0) / 1000.0
+            utils::read_file_content(&temp_sensor_path)?
+                .parse::<f64>()
+                .unwrap_or(0.0)
+                / 1000.0
         } else {
             0.0
         };
