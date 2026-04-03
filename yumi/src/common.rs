@@ -16,8 +16,8 @@
  */
 
 use crate::monitor::config::RulesConfig;
-use std::path::PathBuf;
 use std::env;
+use std::path::PathBuf;
 
 /// 守护进程全局事件总线
 #[derive(Debug, Clone)]
@@ -39,7 +39,7 @@ pub enum DaemonEvent {
         /// 每个 CPU 核心的真实利用率 (0.0 ~ 1.0)，数组索引即 cpu_id
         core_utils: Vec<f32>,
         /// 如果当前有前台应用，这是该应用最吃 CPU 的那 1 个线程的利用率
-        foreground_max_util: f32, 
+        foreground_max_util: f32,
     },
 
     ConfigReload(RulesConfig),
@@ -51,12 +51,15 @@ pub enum DaemonEvent {
 pub fn get_module_root() -> PathBuf {
     // 获取当前执行文件的绝对路径
     let exe_path = env::current_exe().unwrap_or_else(|_| PathBuf::from("/"));
-    
+
     // 回溯两级目录:
     // core/bin/yumi -> core/bin -> core -> yumi
     exe_path
-        .parent().unwrap_or(&exe_path) // .../core/bin
-        .parent().unwrap_or(&exe_path) // .../core
-        .parent().unwrap_or(&exe_path) // .../yumi (Root)
+        .parent()
+        .unwrap_or(&exe_path) // .../core/bin
+        .parent()
+        .unwrap_or(&exe_path) // .../core
+        .parent()
+        .unwrap_or(&exe_path) // .../yumi (Root)
         .to_path_buf()
 }

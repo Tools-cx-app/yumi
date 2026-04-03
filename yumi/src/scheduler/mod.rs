@@ -15,24 +15,24 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use anyhow::Result;
 use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::thread;
 use std::time::Instant;
-use anyhow::Result;
 
 pub mod config;
-pub mod scheduler;
-pub mod fas;
 pub mod cpu_load_governor;
+pub mod fas;
+pub mod scheduler;
 
-use crate::i18n::{t, load_language, t_with_args};
-use crate::fluent_args; 
-use crate::utils; 
-use crate::common::DaemonEvent; 
+use crate::common;
+use crate::common::DaemonEvent;
+use crate::fluent_args;
+use crate::i18n::{load_language, t, t_with_args};
+use crate::logger;
+use crate::utils;
 use config::Config;
 use scheduler::CpuScheduler;
-use crate::logger;
-use crate::common;
 
 // 动态获取系统中实际可用的 CPU Policy
 pub fn get_cpu_policies() -> Vec<i32> {
@@ -55,12 +55,12 @@ pub fn get_cpu_policies() -> Vec<i32> {
 pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     let root = common::get_module_root();
     let config_path = root.join("config/config.yaml");
-    let config_dir = root.join("config"); 
+    let config_dir = root.join("config");
 
     let config = Config::from_file(config_path.to_str().unwrap()).unwrap_or_default();
 
     let shared_config = Arc::new(RwLock::new(config));
-    let shared_mode_name = Arc::new(Mutex::new("balance".to_string())); 
+    let shared_mode_name = Arc::new(Mutex::new("balance".to_string()));
     let sys_path_exist = Arc::new(utils::SysPathExist::new());
 
     // ==========================================
@@ -69,42 +69,72 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     let config_clone = shared_config.clone();
     let mode_clone = shared_mode_name.clone();
     let sys_path_clone = sys_path_exist.clone();
-    
+
     thread::Builder::new()
         .name("config_watcher".to_string())
         .spawn(move || {
             loop {
                 if let Err(e) = utils::watch_path(&config_dir) {
-                    log::error!("{}", t_with_args("config-watch-error", &fluent_args!("error" => e.to_string())));
+                    log::error!(
+                        "{}",
+                        t_with_args(
+                            "config-watch-error",
+                            &fluent_args!("error" => e.to_string())
+                        )
+                    );
                     continue;
                 }
                 log::info!("{}", t("config-reloading"));
 
                 let old_lang = config_clone.read().unwrap().meta.language.clone();
-                
+
                 match Config::from_file(config_path.to_str().unwrap()) {
                     Ok(new_config) => {
                         logger::update_level(&new_config.meta.loglevel);
                         *config_clone.write().unwrap() = new_config;
-                        
+
                         let new_lang = config_clone.read().unwrap().meta.language.clone();
-                        if old_lang != new_lang { load_language(&new_lang); }
+                        if old_lang != new_lang {
+                            load_language(&new_lang);
+                        }
 
                         log::info!("{}", t("config-reloaded-success"));
 
-                        let scheduler = CpuScheduler::new(config_clone.clone(), mode_clone.clone(), sys_path_clone.clone());
+                        let scheduler = CpuScheduler::new(
+                            config_clone.clone(),
+                            mode_clone.clone(),
+                            sys_path_clone.clone(),
+                        );
                         if let Err(e) = scheduler.apply_all_settings() {
-                            log::error!("{}", t_with_args("config-apply-mode-failed", &fluent_args!("error" => e.to_string())));
+                            log::error!(
+                                "{}",
+                                t_with_args(
+                                    "config-apply-mode-failed",
+                                    &fluent_args!("error" => e.to_string())
+                                )
+                            );
                         }
                         if let Err(e) = scheduler.apply_system_tweaks() {
-                            log::error!("{}", t_with_args("config-apply-tweaks-failed", &fluent_args!("error" => e.to_string())));
+                            log::error!(
+                                "{}",
+                                t_with_args(
+                                    "config-apply-tweaks-failed",
+                                    &fluent_args!("error" => e.to_string())
+                                )
+                            );
                         }
                     }
-                    Err(load_err) => log::error!("{}", t_with_args("config-reload-fail", &fluent_args!("error" => load_err.to_string()))),
+                    Err(load_err) => log::error!(
+                        "{}",
+                        t_with_args(
+                            "config-reload-fail",
+                            &fluent_args!("error" => load_err.to_string())
+                        )
+                    ),
                 }
             }
         })?;
-    
+
     log::info!("{}", t("main-config-watch-thread-create"));
 
     // ==========================================
@@ -118,10 +148,10 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
         .name("scheduler_ipc".to_string())
         .spawn(move || {
             log::info!("{}", t("scheduler-ipc-started"));
-            
+
             let root = common::get_module_root();
             let mode_file_path = root.join("current_mode.txt");
-            
+
             let mut fas_controller = crate::scheduler::fas::FasController::new();
             let mut cpu_governor = crate::scheduler::cpu_load_governor::CpuLoadGovernor::new();
 
@@ -132,7 +162,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             let mut fas_suspended_at: Option<Instant> = None;
             let mut fas_suspended_package = String::new();
             const FAS_SUSPEND_GRACE_SECS: u64 = 5;
-            
+
             let mut is_screen_on = true; // 屏幕状态标记
 
             let temp_sensor_path = crate::utils::find_cpu_temp_path().unwrap_or_default();
@@ -159,7 +189,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     }
                 }
             }
-            
+
             for msg in rx {
                 match msg {
                     // --- 1. 屏幕状态事件 (息屏深度睡眠) ---
@@ -169,7 +199,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                         if !is_screen_on {
                             log::info!("{}", t("scheduler-doze-enable"));
-                            
+
                             // 息屏立刻剥夺 FAS 的频率控制权
                             if current_mode == "fas" {
                                 fas_controller.reset_all_freqs();
@@ -181,25 +211,25 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                             // 强行让 CLG 接管，并动态生成一个极致省电配置
                             let config_lock = config_clone.read().unwrap();
-                            let mut doze_cfg = get_clg_cfg(&config_lock, "powersave"); 
+                            let mut doze_cfg = get_clg_cfg(&config_lock, "powersave");
                             doze_cfg.enabled = true;
                             doze_cfg.perf_floor = 0.0;
                             doze_cfg.perf_ceil = doze_cfg.perf_ceil.min(0.40); // 锁死天花板最高只给 40% 性能
                             doze_cfg.smoothing_up = 0.10;           // 升频极其迟钝
                             doze_cfg.smoothing_down = 1.0;          // 瞬间降频
-                            
+
                             cpu_governor.init_policies(&doze_cfg);
                         } else {
                             log::info!("{}", t("scheduler-doze-restore"));
-                            
+
                             let config_lock = config_clone.read().unwrap();
                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
-                            
+
                             if current_mode != "fas" {
-                                if clg_cfg.enabled { cpu_governor.init_policies(&clg_cfg); } 
+                                if clg_cfg.enabled { cpu_governor.init_policies(&clg_cfg); }
                                 else { cpu_governor.release(); }
                             } else {
-                                cpu_governor.release(); 
+                                cpu_governor.release();
                                 *mode_clone.lock().unwrap() = String::new();
                             }
                         }
@@ -209,14 +239,14 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     DaemonEvent::ModeChange { package_name, pid, mode, temperature } => {
                         let mut current_mode_lock = mode_clone.lock().unwrap();
                         let old_mode = current_mode_lock.clone();
-                        
+
                         if old_mode != mode {
                             log::info!("{}", t_with_args("scheduler-mode-change-request", &fluent_args!(
                                 "old" => old_mode.clone(), "new" => mode.as_str(), "pkg" => package_name.as_str(), "temp" => temperature
                             )));
-                            
+
                             *current_mode_lock = mode.clone();
-                            drop(current_mode_lock); 
+                            drop(current_mode_lock);
 
                             let _ = utils::try_write_file(&mode_file_path, mode.as_bytes());
 
@@ -299,8 +329,8 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         let current_mode = mode_clone.lock().unwrap().clone();
                         if current_mode == "fas" {
                             if !temp_sensor_path.is_empty() && last_temp_update.elapsed().as_secs() >= 3 {
-                                if let Ok(raw_temp) = crate::utils::read_f64_from_file(&temp_sensor_path) { 
-                                    fas_controller.set_temperature(raw_temp / 1000.0); 
+                                if let Ok(raw_temp) = crate::utils::read_f64_from_file(&temp_sensor_path) {
+                                    fas_controller.set_temperature(raw_temp / 1000.0);
                                 }
                                 last_temp_update = Instant::now();
                             }
@@ -312,7 +342,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     DaemonEvent::ConfigReload(new_rules) => {
                         current_rules = new_rules;
                         let current_mode = mode_clone.lock().unwrap().clone();
-                        
+
                         if current_mode == "fas" {
                             if fas_controller.policies.is_empty() {
                                 fas_controller.load_policies(&current_rules.fas_rules);
@@ -323,7 +353,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             let config_lock = config_clone.read().unwrap();
                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
                             if clg_cfg.enabled {
-                                if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); } 
+                                if cpu_governor.is_active() { cpu_governor.reload_config(&clg_cfg); }
                                 else { cpu_governor.init_policies(&clg_cfg); }
                             } else if cpu_governor.is_active() {
                                 cpu_governor.release();

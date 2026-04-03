@@ -21,13 +21,17 @@ use serde::Deserialize;
 pub struct Meta {
     #[serde(default = "default_loglevel", alias = "Loglevel")]
     pub loglevel: String,
-    
+
     #[serde(default = "default_language", alias = "Language")]
     pub language: String,
 }
 
-fn default_loglevel() -> String { "INFO".to_string() }
-fn default_language() -> String { "en".to_string() }
+fn default_loglevel() -> String {
+    "INFO".to_string()
+}
+fn default_language() -> String {
+    "en".to_string()
+}
 
 // ════════════════════════════════════════════════════════════════
 //  CPU Load Governor 配置
@@ -35,28 +39,58 @@ fn default_language() -> String { "en".to_string() }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CpuLoadGovernorConfig {
-    #[serde(default = "default_true")] pub enabled: bool,
-    #[serde(default = "d_clg_up_thresh")] pub up_threshold: f32,
-    #[serde(default = "d_clg_down_thresh")] pub down_threshold: f32,
-    #[serde(default = "d_clg_smooth_up")] pub smoothing_up: f32,
-    #[serde(default = "d_clg_smooth_down")] pub smoothing_down: f32,
-    #[serde(default = "d_clg_down_rate")] pub down_rate_limit_ticks: u32,
-    #[serde(default = "d_clg_headroom")] pub headroom_factor: f32,
-    #[serde(default = "d_clg_floor")] pub perf_floor: f32,
-    #[serde(default = "d_clg_ceil")] pub perf_ceil: f32,
-    #[serde(default = "d_clg_init")] pub perf_init: f32,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "d_clg_up_thresh")]
+    pub up_threshold: f32,
+    #[serde(default = "d_clg_down_thresh")]
+    pub down_threshold: f32,
+    #[serde(default = "d_clg_smooth_up")]
+    pub smoothing_up: f32,
+    #[serde(default = "d_clg_smooth_down")]
+    pub smoothing_down: f32,
+    #[serde(default = "d_clg_down_rate")]
+    pub down_rate_limit_ticks: u32,
+    #[serde(default = "d_clg_headroom")]
+    pub headroom_factor: f32,
+    #[serde(default = "d_clg_floor")]
+    pub perf_floor: f32,
+    #[serde(default = "d_clg_ceil")]
+    pub perf_ceil: f32,
+    #[serde(default = "d_clg_init")]
+    pub perf_init: f32,
 }
 
-fn default_true() -> bool { true }
-fn d_clg_up_thresh() -> f32 { 0.80 }
-fn d_clg_down_thresh() -> f32 { 0.50 }
-fn d_clg_smooth_up() -> f32 { 0.60 }
-fn d_clg_smooth_down() -> f32 { 0.30 }
-fn d_clg_down_rate() -> u32 { 3 }
-fn d_clg_headroom() -> f32 { 1.25 }
-fn d_clg_floor() -> f32 { 0.15 }
-fn d_clg_ceil() -> f32 { 1.0 }
-fn d_clg_init() -> f32 { 0.50 }
+fn default_true() -> bool {
+    true
+}
+fn d_clg_up_thresh() -> f32 {
+    0.80
+}
+fn d_clg_down_thresh() -> f32 {
+    0.50
+}
+fn d_clg_smooth_up() -> f32 {
+    0.60
+}
+fn d_clg_smooth_down() -> f32 {
+    0.30
+}
+fn d_clg_down_rate() -> u32 {
+    3
+}
+fn d_clg_headroom() -> f32 {
+    1.25
+}
+fn d_clg_floor() -> f32 {
+    0.15
+}
+fn d_clg_ceil() -> f32 {
+    1.0
+}
+fn d_clg_init() -> f32 {
+    0.50
+}
 
 impl Default for CpuLoadGovernorConfig {
     fn default() -> Self {
@@ -88,10 +122,14 @@ pub struct Mode {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct IOSettings {
-    #[serde(default, rename = "Scheduler")] pub scheduler: String,
-    #[serde(default = "default_read_ahead_kb")] pub read_ahead_kb: String,
-    #[serde(default = "default_nomerges")] pub nomerges: String,
-    #[serde(default = "default_iostats")] pub iostats: String,
+    #[serde(default, rename = "Scheduler")]
+    pub scheduler: String,
+    #[serde(default = "default_read_ahead_kb")]
+    pub read_ahead_kb: String,
+    #[serde(default = "default_nomerges")]
+    pub nomerges: String,
+    #[serde(default = "default_iostats")]
+    pub iostats: String,
 }
 
 impl Default for IOSettings {
@@ -105,9 +143,15 @@ impl Default for IOSettings {
     }
 }
 
-fn default_read_ahead_kb() -> String { "128".to_string() }
-fn default_nomerges() -> String { "2".to_string() }
-fn default_iostats() -> String { "0".to_string() }
+fn default_read_ahead_kb() -> String {
+    "128".to_string()
+}
+fn default_nomerges() -> String {
+    "2".to_string()
+}
+fn default_iostats() -> String {
+    "0".to_string()
+}
 
 #[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -117,8 +161,10 @@ pub struct CpuIdle {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct FunctionToggles {
-    #[serde(rename = "CpuIdleScalingGovernor")] pub cpu_idle_scaling_governor: bool,
-    #[serde(rename = "IOOptimization")] pub io_optimization: bool,
+    #[serde(rename = "CpuIdleScalingGovernor")]
+    pub cpu_idle_scaling_governor: bool,
+    #[serde(rename = "IOOptimization")]
+    pub io_optimization: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -131,12 +177,16 @@ pub struct Config {
     pub io_settings: IOSettings,
     #[serde(default, rename = "CpuIdle")]
     pub cpu_idle: CpuIdle,
-    
+
     // 按场景划分的性能模式
-    #[serde(default)] pub powersave: Mode,
-    #[serde(default)] pub balance: Mode,
-    #[serde(default)] pub performance: Mode,
-    #[serde(default)] pub fast: Mode,
+    #[serde(default)]
+    pub powersave: Mode,
+    #[serde(default)]
+    pub balance: Mode,
+    #[serde(default)]
+    pub performance: Mode,
+    #[serde(default)]
+    pub fast: Mode,
 }
 
 impl Config {

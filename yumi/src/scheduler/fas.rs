@@ -15,16 +15,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::monitor::config::{
-    FasRulesConfig, ClusterProfile, PerAppProfile,
-};
+use crate::monitor::config::{ClusterProfile, FasRulesConfig, PerAppProfile};
 use crate::utils::FastWriter;
+use log::{info, warn};
 use std::fs;
 use std::time::Instant;
-use log::{info, warn};
 
-use crate::i18n::{t, t_with_args};
 use crate::fluent_args;
+use crate::i18n::{t, t_with_args};
 
 // ════════════════════════════════════════════════════════════════
 //  PolicyController — 单个 cpufreq policy 的频率控制
@@ -60,13 +58,21 @@ impl PolicyController {
         let freq_min = *available_freqs.first().unwrap_or(&0) as f32;
         let freq_max = *available_freqs.last().unwrap_or(&1) as f32;
         let range = (freq_max - freq_min).max(1.0);
-        let cached_ratios: Vec<f32> = available_freqs.iter()
+        let cached_ratios: Vec<f32> = available_freqs
+            .iter()
             .map(|&f| (f as f32 - freq_min) / range)
             .collect();
         Self {
-            max_writer, min_writer, available_freqs, cached_ratios,
-            current_freq, policy_id, cluster_profile,
-            freq_hold_frames: 0, freq_min, freq_max,
+            max_writer,
+            min_writer,
+            available_freqs,
+            cached_ratios,
+            current_freq,
+            policy_id,
+            cluster_profile,
+            freq_hold_frames: 0,
+            freq_min,
+            freq_max,
             verify_freq: None,
             verify_timer: Instant::now(),
             ignore_write: false,
@@ -84,7 +90,11 @@ impl PolicyController {
             let hi = idx;
             if (self.cached_ratios[hi] - target_ratio).abs()
                 < (self.cached_ratios[lo] - target_ratio).abs()
-            { self.available_freqs[hi] } else { self.available_freqs[lo] }
+            {
+                self.available_freqs[hi]
+            } else {
+                self.available_freqs[lo]
+            }
         }
     }
 
@@ -94,7 +104,9 @@ impl PolicyController {
 
     /// 锁频写入 (min=max)，用于关键 cluster
     pub fn apply_freq_locked(&mut self, target_freq: u32) {
-        if self.ignore_write { return; }
+        if self.ignore_write {
+            return;
+        }
         if target_freq >= self.current_freq {
             self.max_writer.write_value_force(target_freq);
             self.min_writer.write_value_force(target_freq);
@@ -110,7 +122,9 @@ impl PolicyController {
     /// 松散写入 (min=lowest, max=target)，用于非关键 cluster 或负载较低时
     #[allow(dead_code)]
     pub fn apply_freq_relaxed(&mut self, target_freq: u32) {
-        if self.ignore_write { return; }
+        if self.ignore_write {
+            return;
+        }
         let min_f = self.available_freqs[0];
         self.min_writer.write_value_force(min_f);
         self.max_writer.write_value_force(target_freq);
@@ -126,17 +140,32 @@ impl PolicyController {
             self.verify_timer = Instant::now();
             if let Some(expected) = self.verify_freq {
                 if let Some(actual) = self.read_current_freq() {
-                    let min_ok = self.available_freqs.iter()
-                        .take_while(|&&f| f <= expected).last().copied().unwrap_or(expected);
-                    let max_ok = self.available_freqs.iter()
-                        .find(|&&f| f >= expected).copied().unwrap_or(expected);
+                    let min_ok = self
+                        .available_freqs
+                        .iter()
+                        .take_while(|&&f| f <= expected)
+                        .last()
+                        .copied()
+                        .unwrap_or(expected);
+                    let max_ok = self
+                        .available_freqs
+                        .iter()
+                        .find(|&&f| f >= expected)
+                        .copied()
+                        .unwrap_or(expected);
                     if actual < min_ok || actual > max_ok {
-                        warn!("{}", t_with_args("fas-freq-mismatch", &fluent_args!(
-                            "pid" => self.policy_id.to_string(),
-                            "min" => min_ok.to_string(),
-                            "max" => max_ok.to_string(),
-                            "actual" => actual.to_string()
-                        )));
+                        warn!(
+                            "{}",
+                            t_with_args(
+                                "fas-freq-mismatch",
+                                &fluent_args!(
+                                    "pid" => self.policy_id.to_string(),
+                                    "min" => min_ok.to_string(),
+                                    "max" => max_ok.to_string(),
+                                    "actual" => actual.to_string()
+                                )
+                            )
+                        );
                         self.max_writer.re_unmount();
                         self.min_writer.re_unmount();
                         self.max_writer.invalidate();
@@ -164,7 +193,9 @@ impl PolicyController {
     }
 
     pub fn force_reapply(&mut self) {
-        if self.ignore_write { return; }
+        if self.ignore_write {
+            return;
+        }
         self.max_writer.re_unmount();
         self.min_writer.re_unmount();
         self.max_writer.invalidate();
@@ -200,7 +231,14 @@ struct FpsWindow {
 
 impl FpsWindow {
     fn new() -> Self {
-        Self { buf: [0.0; WINDOW_SIZE], pos: 0, len: 0, sum: 0.0, sq_sum: 0.0, push_count: 0 }
+        Self {
+            buf: [0.0; WINDOW_SIZE],
+            pos: 0,
+            len: 0,
+            sum: 0.0,
+            sq_sum: 0.0,
+            push_count: 0,
+        }
     }
 
     fn push(&mut self, fps: f32) {
@@ -230,13 +268,23 @@ impl FpsWindow {
         self.sq_sum = slice.iter().map(|x| x * x).sum();
     }
 
-    #[inline] fn count(&self) -> usize { self.len }
-    #[inline] fn mean(&self) -> f32 {
-        if self.len == 0 { 0.0 } else { self.sum / self.len as f32 }
+    #[inline]
+    fn count(&self) -> usize {
+        self.len
+    }
+    #[inline]
+    fn mean(&self) -> f32 {
+        if self.len == 0 {
+            0.0
+        } else {
+            self.sum / self.len as f32
+        }
     }
 
     fn recent_mean(&self, n: usize) -> f32 {
-        if self.len == 0 { return 0.0; }
+        if self.len == 0 {
+            return 0.0;
+        }
         let count = n.min(self.len);
         let mut sum = 0.0;
         for i in 0..count {
@@ -247,7 +295,9 @@ impl FpsWindow {
     }
 
     fn stddev(&self) -> f32 {
-        if self.len < 2 { return 0.0; }
+        if self.len < 2 {
+            return 0.0;
+        }
         let n = self.len as f32;
         let mean = self.sum / n;
         (self.sq_sum / n - mean * mean).max(0.0).sqrt()
@@ -255,7 +305,10 @@ impl FpsWindow {
 
     fn clear(&mut self) {
         self.buf = [0.0; WINDOW_SIZE];
-        self.pos = 0; self.len = 0; self.sum = 0.0; self.sq_sum = 0.0;
+        self.pos = 0;
+        self.len = 0;
+        self.sum = 0.0;
+        self.sq_sum = 0.0;
         self.push_count = 0;
     }
 }
@@ -266,10 +319,15 @@ impl FpsWindow {
 
 struct PidController {
     // 用户配置的基准系数 (基于 60fps 场景调优)
-    base_kp: f32, base_ki: f32, base_kd: f32,
+    base_kp: f32,
+    base_ki: f32,
+    base_kd: f32,
     // 运行时实际使用的动态系数 (根据 target_fps 和场景自动缩放)
-    kp: f32, ki: f32, kd: f32,
-    integral: f32, prev_error: f32,
+    kp: f32,
+    ki: f32,
+    kd: f32,
+    integral: f32,
+    prev_error: f32,
     filtered_deriv: f32,
     integral_limit: f32,
     // 缓存当前适配的目标帧率，避免重复计算
@@ -279,10 +337,16 @@ struct PidController {
 impl PidController {
     fn new(kp: f32, ki: f32, kd: f32) -> Self {
         Self {
-            base_kp: kp, base_ki: ki, base_kd: kd,
-            kp, ki, kd,
-            integral: 0.0, prev_error: 0.0,
-            filtered_deriv: 0.0, integral_limit: 0.15,
+            base_kp: kp,
+            base_ki: ki,
+            base_kd: kd,
+            kp,
+            ki,
+            kd,
+            integral: 0.0,
+            prev_error: 0.0,
+            filtered_deriv: 0.0,
+            integral_limit: 0.15,
             adapted_fps: 60.0,
         }
     }
@@ -295,7 +359,9 @@ impl PidController {
     /// 因此 P/I/D 三个通道的增益都需要随 target_fps 缩放，
     /// 但缩放系数不同：P 最激进，D 最保守 (高刷噪声大)。
     fn adapt_to_target_fps(&mut self, target_fps: f32) {
-        if (target_fps - self.adapted_fps).abs() < 0.5 { return; }
+        if (target_fps - self.adapted_fps).abs() < 0.5 {
+            return;
+        }
         self.adapted_fps = target_fps;
 
         let ratio = target_fps / 60.0;
@@ -309,7 +375,9 @@ impl PidController {
         // 积分限幅：高刷下缩小，防止积分器饱和导致频率虚高
         self.integral_limit = 0.15 * (60.0 / target_fps.max(1.0)).sqrt();
         // 不 reset 积分器（保持连续性），只做 clamp
-        self.integral = self.integral.clamp(-self.integral_limit, self.integral_limit);
+        self.integral = self
+            .integral
+            .clamp(-self.integral_limit, self.integral_limit);
     }
 
     /// 带利用率感知的 PID 计算
@@ -343,7 +411,7 @@ impl PidController {
         // fg_util ∈ [0.30, 1.0] → CPU bound，正常增益
         // fg_util 无数据 (≤ 0.01) → 刚启动还没采样到，不衰减
         let util_gain = if fg_util > 0.01 && fg_util < 0.30 {
-            0.3 + fg_util * 2.3  // 0.3 ~ 0.99
+            0.3 + fg_util * 2.3 // 0.3 ~ 0.99
         } else {
             1.0
         };
@@ -356,11 +424,15 @@ impl PidController {
     }
 
     fn reset(&mut self) {
-        self.integral = 0.0; self.prev_error = 0.0; self.filtered_deriv = 0.0;
+        self.integral = 0.0;
+        self.prev_error = 0.0;
+        self.filtered_deriv = 0.0;
     }
 
     fn update_coefficients(&mut self, kp: f32, ki: f32, kd: f32) {
-        self.base_kp = kp; self.base_ki = ki; self.base_kd = kd;
+        self.base_kp = kp;
+        self.base_ki = ki;
+        self.base_kd = kd;
         // 重新按当前 adapted_fps 缩放
         let fps = self.adapted_fps;
         self.adapted_fps = 0.0; // 强制刷新
@@ -374,27 +446,53 @@ impl PidController {
 // ════════════════════════════════════════════════════════════════
 
 fn probe_policy_capacity(policy_id: i32) -> Option<u32> {
-    let related_str = fs::read_to_string(
-        format!("/sys/devices/system/cpu/cpufreq/policy{}/related_cpus", policy_id))
-        .or_else(|_| fs::read_to_string(
-            format!("/sys/devices/system/cpu/cpufreq/policy{}/affected_cpus", policy_id)))
-        .ok()?;
+    let related_str = fs::read_to_string(format!(
+        "/sys/devices/system/cpu/cpufreq/policy{}/related_cpus",
+        policy_id
+    ))
+    .or_else(|_| {
+        fs::read_to_string(format!(
+            "/sys/devices/system/cpu/cpufreq/policy{}/affected_cpus",
+            policy_id
+        ))
+    })
+    .ok()?;
     let first_cpu: u32 = related_str.split_whitespace().next()?.parse().ok()?;
-    fs::read_to_string(format!("/sys/devices/system/cpu/cpu{}/cpu_capacity", first_cpu))
-        .ok()?.trim().parse::<u32>().ok()
+    fs::read_to_string(format!(
+        "/sys/devices/system/cpu/cpu{}/cpu_capacity",
+        first_cpu
+    ))
+    .ok()?
+    .trim()
+    .parse::<u32>()
+    .ok()
 }
 
 fn auto_compute_capacity_weights(policy_ids: &[i32]) -> Option<Vec<(i32, f32)>> {
-    let caps: Vec<(i32, u32)> = policy_ids.iter()
+    let caps: Vec<(i32, u32)> = policy_ids
+        .iter()
         .filter(|&&pid| pid != -1)
         .filter_map(|&pid| probe_policy_capacity(pid).map(|c| (pid, c)))
         .collect();
-    if caps.is_empty() || caps.iter().any(|&(_, c)| c == 0) { return None; }
+    if caps.is_empty() || caps.iter().any(|&(_, c)| c == 0) {
+        return None;
+    }
     let min_cap = caps.iter().map(|&(_, c)| c).min().unwrap() as f32;
-    Some(caps.iter().map(|&(pid, cap)| {
-        let r = cap as f32 / min_cap;
-        (pid, if r <= 1.01 { 1.0 } else { 1.0 + (r - 1.0).sqrt() })
-    }).collect())
+    Some(
+        caps.iter()
+            .map(|&(pid, cap)| {
+                let r = cap as f32 / min_cap;
+                (
+                    pid,
+                    if r <= 1.01 {
+                        1.0
+                    } else {
+                        1.0 + (r - 1.0).sqrt()
+                    },
+                )
+            })
+            .collect(),
+    )
 }
 
 #[inline]
@@ -574,7 +672,11 @@ impl FasController {
             self.ema_fg_util = fg_util;
         } else {
             // Rise fast (alpha=0.4), fall slow (alpha=0.15) to prevent transient lows from killing freq
-            let alpha = if fg_util > self.ema_fg_util { 0.40 } else { 0.15 };
+            let alpha = if fg_util > self.ema_fg_util {
+                0.40
+            } else {
+                0.15
+            };
             self.ema_fg_util = self.ema_fg_util * (1.0 - alpha) + fg_util * alpha;
         }
     }
@@ -616,13 +718,19 @@ impl FasController {
     // ════════════════════════════════════════════════════════════
 
     fn next_gear(&self) -> Option<f32> {
-        self.fps_gears.iter().copied()
-            .filter(|&g| g > self.current_target_fps + 0.5).reduce(f32::min)
+        self.fps_gears
+            .iter()
+            .copied()
+            .filter(|&g| g > self.current_target_fps + 0.5)
+            .reduce(f32::min)
     }
 
     fn prev_gear(&self) -> Option<f32> {
-        self.fps_gears.iter().copied()
-            .filter(|&g| g < self.current_target_fps - 0.5).reduce(f32::max)
+        self.fps_gears
+            .iter()
+            .copied()
+            .filter(|&g| g < self.current_target_fps - 0.5)
+            .reduce(f32::max)
     }
 
     fn max_gear(&self) -> f32 {
@@ -650,7 +758,9 @@ impl FasController {
     ///
     /// 效果：GPU bound 场景自动放宽帧率目标，减少无效拉频
     fn adjust_target_for_util(&mut self) {
-        if self.util_sample_timer.elapsed().as_millis() < 1000 { return; }
+        if self.util_sample_timer.elapsed().as_millis() < 1000 {
+            return;
+        }
         self.util_sample_timer = Instant::now();
 
         // jank_cooldown 期间禁止降低 target，只允许恢复
@@ -674,11 +784,18 @@ impl FasController {
     }
 
     fn detect_native_gear(&self, avg_fps: f32) -> Option<f32> {
-        if self.fps_window.count() < 20 { return None; }
+        if self.fps_window.count() < 20 {
+            return None;
+        }
         if avg_fps > 5.0 && self.fps_window.stddev() < avg_fps * 0.10 {
-            self.fps_gears.iter().rev().copied()
+            self.fps_gears
+                .iter()
+                .rev()
+                .copied()
                 .find(|&g| g < self.current_target_fps - 0.5 && (avg_fps - g).abs() < 8.0)
-        } else { None }
+        } else {
+            None
+        }
     }
 
     fn do_gear_switch(&mut self, new_fps: f32, perf: f32, dampen: u32) {
@@ -693,7 +810,7 @@ impl FasController {
         let final_perf = if new_fps > old {
             let min_upgrade_perf = (new_fps / 144.0).clamp(0.45, 0.70);
             perf.max(min_upgrade_perf)
-        } else { 
+        } else {
             let max_downgrade_perf = (new_fps / 144.0 + 0.30).clamp(0.45, 0.75);
             perf.min(max_downgrade_perf)
         };
@@ -708,11 +825,17 @@ impl FasController {
         // 齿轮切换后清除 jank 保护（新档位有自己的 perf 基线）
         self.post_jank_perf_floor = 0.0;
         self.post_jank_guard_frames = 0;
-        info!("{}", t_with_args("fas-gear-switch", &fluent_args!(
-            "old" => format!("{:.0}", old),
-            "new" => format!("{:.0}", new_fps),
-            "perf" => format!("{:.2}", final_perf)
-        )));
+        info!(
+            "{}",
+            t_with_args(
+                "fas-gear-switch",
+                &fluent_args!(
+                    "old" => format!("{:.0}", old),
+                    "new" => format!("{:.0}", new_fps),
+                    "perf" => format!("{:.2}", final_perf)
+                )
+            )
+        );
     }
 
     fn reset_runtime(&mut self) {
@@ -772,27 +895,45 @@ impl FasController {
         self.current_package = package.to_string();
         let profile = self.cfg.per_app_profiles.get(package).cloned();
         if let Some(ref p) = profile {
-            if let Some(m) = p.fps_margin { self.fps_margin = m; }
+            if let Some(m) = p.fps_margin {
+                self.fps_margin = m;
+            }
             if let Some(ref gears) = p.target_fps {
                 if !gears.is_empty() {
                     self.fps_gears = gears.clone();
-                    if !self.fps_gears.iter().any(|&g| (g - self.current_target_fps).abs() < 0.5) {
-                        self.current_target_fps = self.fps_gears.iter().copied()
-                            .fold(60.0_f32, f32::max);
+                    if !self
+                        .fps_gears
+                        .iter()
+                        .any(|&g| (g - self.current_target_fps).abs() < 0.5)
+                    {
+                        self.current_target_fps =
+                            self.fps_gears.iter().copied().fold(60.0_f32, f32::max);
                     }
                     self.refresh_cached_values();
                 }
             }
-            info!("{}", t_with_args("fas-set-game", &fluent_args!(
-                "pkg" => package,
-                "gears" => format!("{:?}", self.fps_gears),
-                "target" => format!("{:.0}", self.current_target_fps)
-            )));
+            info!(
+                "{}",
+                t_with_args(
+                    "fas-set-game",
+                    &fluent_args!(
+                        "pkg" => package,
+                        "gears" => format!("{:?}", self.fps_gears),
+                        "target" => format!("{:.0}", self.current_target_fps)
+                    )
+                )
+            );
         } else {
-            warn!("{}", t_with_args("fas-no-profile", &fluent_args!(
-                "pkg" => package,
-                "gears" => format!("{:?}", self.fps_gears)
-            )));
+            warn!(
+                "{}",
+                t_with_args(
+                    "fas-no-profile",
+                    &fluent_args!(
+                        "pkg" => package,
+                        "gears" => format!("{:?}", self.fps_gears)
+                    )
+                )
+            );
         }
         self.active_profile = profile;
     }
@@ -806,19 +947,31 @@ impl FasController {
         self.core_utils.clear();
         self.target_fps_offset = 0.0;
         // 恢复全局 margin 和 gears
-        if let Ok(m) = self.cfg.fps_margin.parse::<f32>() { self.fps_margin = m; }
+        if let Ok(m) = self.cfg.fps_margin.parse::<f32>() {
+            self.fps_margin = m;
+        }
         self.fps_gears = self.cfg.fps_gears.clone();
     }
 
-    pub fn set_temperature(&mut self, temp: f64) { self.current_temperature = temp; }
-    pub fn set_temp_threshold(&mut self, thresh: f64) { self.temp_threshold = thresh; }
+    pub fn set_temperature(&mut self, temp: f64) {
+        self.current_temperature = temp;
+    }
+    pub fn set_temp_threshold(&mut self, thresh: f64) {
+        self.temp_threshold = thresh;
+    }
 
     #[allow(dead_code)]
     pub fn set_ignore_policy(&mut self, policy_id: usize, ignore: bool) {
         for p in &mut self.policies {
             if p.policy_id == policy_id {
                 p.ignore_write = ignore;
-                info!("{}", t_with_args("fas-ignore-write", &fluent_args!("pid" => policy_id.to_string(), "ignore" => ignore.to_string())));
+                info!(
+                    "{}",
+                    t_with_args(
+                        "fas-ignore-write",
+                        &fluent_args!("pid" => policy_id.to_string(), "ignore" => ignore.to_string())
+                    )
+                );
             }
         }
     }
@@ -875,47 +1028,76 @@ impl FasController {
             || (old_ki - new_rules.pid.ki).abs() > 0.001
             || (old_kd - new_rules.pid.kd).abs() > 0.001
         {
-            self.pid.update_coefficients(new_rules.pid.kp, new_rules.pid.ki, new_rules.pid.kd);
-            info!("{}", t_with_args("fas-pid-reloaded", &fluent_args!(
-                "kp" => format!("{:.4}", new_rules.pid.kp),
-                "ki" => format!("{:.4}", new_rules.pid.ki),
-                "kd" => format!("{:.4}", new_rules.pid.kd)
-            )));
+            self.pid
+                .update_coefficients(new_rules.pid.kp, new_rules.pid.ki, new_rules.pid.kd);
+            info!(
+                "{}",
+                t_with_args(
+                    "fas-pid-reloaded",
+                    &fluent_args!(
+                        "kp" => format!("{:.4}", new_rules.pid.kp),
+                        "ki" => format!("{:.4}", new_rules.pid.ki),
+                        "kd" => format!("{:.4}", new_rules.pid.kd)
+                    )
+                )
+            );
         }
 
         // 更新当前应用的 profile
         if !self.current_package.is_empty() {
-            let profile = new_rules.per_app_profiles.get(&self.current_package).cloned();
+            let profile = new_rules
+                .per_app_profiles
+                .get(&self.current_package)
+                .cloned();
             if let Some(ref p) = profile {
-                if let Some(m) = p.fps_margin { self.fps_margin = m; }
+                if let Some(m) = p.fps_margin {
+                    self.fps_margin = m;
+                }
                 // 更新 target_fps 齿轮列表
                 if let Some(ref gears) = p.target_fps {
                     if !gears.is_empty() {
                         self.fps_gears = gears.clone();
-                        if !self.fps_gears.iter().any(|&g| (g - self.current_target_fps).abs() < 0.5) {
-                            self.current_target_fps = self.fps_gears.iter().copied()
-                                .fold(60.0_f32, f32::max);
+                        if !self
+                            .fps_gears
+                            .iter()
+                            .any(|&g| (g - self.current_target_fps).abs() < 0.5)
+                        {
+                            self.current_target_fps =
+                                self.fps_gears.iter().copied().fold(60.0_f32, f32::max);
                         }
                     }
                 }
             } else {
                 // 无 per-app 配置，用全局 margin
-                if let Ok(m) = new_rules.fps_margin.parse::<f32>() { self.fps_margin = m; }
+                if let Ok(m) = new_rules.fps_margin.parse::<f32>() {
+                    self.fps_margin = m;
+                }
             }
             self.active_profile = profile;
         } else {
-            if let Ok(m) = new_rules.fps_margin.parse::<f32>() { self.fps_margin = m; }
+            if let Ok(m) = new_rules.fps_margin.parse::<f32>() {
+                self.fps_margin = m;
+            }
         }
 
         // 齿轮列表变更
         if !new_rules.fps_gears.is_empty() && new_rules.fps_gears != self.cfg.fps_gears {
             self.cfg.fps_gears = new_rules.fps_gears.clone();
             // 仅在没有 per-app 覆写时更新运行时齿轮
-            if self.active_profile.as_ref().and_then(|p| p.target_fps.as_ref()).is_none() {
+            if self
+                .active_profile
+                .as_ref()
+                .and_then(|p| p.target_fps.as_ref())
+                .is_none()
+            {
                 self.fps_gears = new_rules.fps_gears.clone();
-                if !self.fps_gears.iter().any(|&g| (g - self.current_target_fps).abs() < 0.5) {
-                    self.current_target_fps = self.fps_gears.iter().copied()
-                        .fold(60.0_f32, f32::max);
+                if !self
+                    .fps_gears
+                    .iter()
+                    .any(|&g| (g - self.current_target_fps).abs() < 0.5)
+                {
+                    self.current_target_fps =
+                        self.fps_gears.iter().copied().fold(60.0_f32, f32::max);
                 }
             }
         }
@@ -923,12 +1105,18 @@ impl FasController {
         self.temp_threshold = new_rules.core_temp_threshold;
         self.refresh_cached_values();
 
-        info!("{}", t_with_args("fas-rules-reloaded", &fluent_args!(
-            "margin" => format!("{:.1}", self.fps_margin),
-            "floor" => format!("{:.2}", self.cfg.perf_floor),
-            "ceil" => format!("{:.2}", self.cfg.perf_ceil),
-            "profiles" => self.cfg.per_app_profiles.len().to_string()
-        )));
+        info!(
+            "{}",
+            t_with_args(
+                "fas-rules-reloaded",
+                &fluent_args!(
+                    "margin" => format!("{:.1}", self.fps_margin),
+                    "floor" => format!("{:.2}", self.cfg.perf_floor),
+                    "ceil" => format!("{:.2}", self.cfg.perf_ceil),
+                    "profiles" => self.cfg.per_app_profiles.len().to_string()
+                )
+            )
+        );
     }
 
     // ════════════════════════════════════════════════════════════
@@ -981,10 +1169,13 @@ impl FasController {
 
             if target_freq != policy.current_freq {
                 let diff = (policy.find_nearest_freq(ratio) as f32 / policy.freq_max
-                    - policy.current_ratio()).abs();
+                    - policy.current_ratio())
+                .abs();
 
                 // 变化小于迟滞阈值且非强制时跳过
-                if diff <= self.cfg.freq_hysteresis && !force { continue; }
+                if diff <= self.cfg.freq_hysteresis && !force {
+                    continue;
+                }
 
                 // 根据 cluster 实际负载选择写入策略
                 // 如果该 cluster 对应的核心利用率低于 30%，用 relaxed 模式节电
@@ -1008,7 +1199,9 @@ impl FasController {
         if !fas_rules.fps_gears.is_empty() {
             self.fps_gears = fas_rules.fps_gears.clone();
         }
-        if let Ok(m) = fas_rules.fps_margin.parse::<f32>() { self.fps_margin = m; }
+        if let Ok(m) = fas_rules.fps_margin.parse::<f32>() {
+            self.fps_margin = m;
+        }
 
         let _ = crate::utils::write_to_file("/sys/module/perfmgr/parameters/perfmgr_enable", "0");
         let _ = crate::utils::write_to_file("/sys/module/mtk_fpsgo/parameters/perfmgr_enable", "0");
@@ -1020,65 +1213,116 @@ impl FasController {
             auto_compute_capacity_weights(&clusters).map(|w| {
                 info!("{}", t("fas-auto-capacity"));
                 for &(pid, wt) in &w {
-                    info!("{}", t_with_args("fas-auto-capacity-core", &fluent_args!(
-                        "pid" => pid.to_string(),
-                        "cap" => probe_policy_capacity(pid).unwrap_or(0).to_string(),
-                        "weight" => format!("{:.2}", wt)
-                    )));
+                    info!(
+                        "{}",
+                        t_with_args(
+                            "fas-auto-capacity-core",
+                            &fluent_args!(
+                                "pid" => pid.to_string(),
+                                "cap" => probe_policy_capacity(pid).unwrap_or(0).to_string(),
+                                "weight" => format!("{:.2}", wt)
+                            )
+                        )
+                    );
                 }
                 w
             })
-        } else { None };
+        } else {
+            None
+        };
 
         for (idx, &pid) in clusters.iter().enumerate() {
             let _ = crate::utils::try_write_file(
-                &format!("/sys/devices/system/cpu/cpufreq/policy{}/scaling_governor", pid),
-                "performance");
+                &format!(
+                    "/sys/devices/system/cpu/cpufreq/policy{}/scaling_governor",
+                    pid
+                ),
+                "performance",
+            );
 
-            let mut freqs: Vec<u32> = fs::read_to_string(
-                format!("/sys/devices/system/cpu/cpufreq/policy{}/scaling_available_frequencies", pid))
-                .unwrap_or_default()
-                .split_whitespace()
-                .filter_map(|s| s.parse().ok()).collect();
-            if freqs.is_empty() { continue; }
+            let mut freqs: Vec<u32> = fs::read_to_string(format!(
+                "/sys/devices/system/cpu/cpufreq/policy{}/scaling_available_frequencies",
+                pid
+            ))
+            .unwrap_or_default()
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+            if freqs.is_empty() {
+                continue;
+            }
             freqs.sort_unstable();
             freqs.dedup();
 
             let max_f = *freqs.last().unwrap();
             let mut mw = FastWriter::new(format!(
-                "/sys/devices/system/cpu/cpufreq/policy{}/scaling_max_freq", pid));
+                "/sys/devices/system/cpu/cpufreq/policy{}/scaling_max_freq",
+                pid
+            ));
             let mut nw = FastWriter::new(format!(
-                "/sys/devices/system/cpu/cpufreq/policy{}/scaling_min_freq", pid));
+                "/sys/devices/system/cpu/cpufreq/policy{}/scaling_min_freq",
+                pid
+            ));
 
             // 检查 FastWriter 是否成功打开文件，跳过无效的 policy
             if !mw.is_valid() || !nw.is_valid() {
-                warn!("{}", t_with_args("fas-policy-writer-invalid", &fluent_args!(
-                    "pid" => pid.to_string(),
-                    "max_valid" => mw.is_valid().to_string(),
-                    "min_valid" => nw.is_valid().to_string()
-                )));
+                warn!(
+                    "{}",
+                    t_with_args(
+                        "fas-policy-writer-invalid",
+                        &fluent_args!(
+                            "pid" => pid.to_string(),
+                            "max_valid" => mw.is_valid().to_string(),
+                            "min_valid" => nw.is_valid().to_string()
+                        )
+                    )
+                );
                 continue;
             }
 
             mw.write_value_force(max_f);
             nw.write_value_force(max_f);
 
-            let profile = auto_w.as_ref()
+            let profile = auto_w
+                .as_ref()
                 .and_then(|aw| aw.iter().find(|&&(p, _)| p == pid))
                 .map(|&(_, w)| ClusterProfile { capacity_weight: w })
-                .unwrap_or_else(|| fas_rules.cluster_profiles.get(idx).cloned().unwrap_or_default());
+                .unwrap_or_else(|| {
+                    fas_rules
+                        .cluster_profiles
+                        .get(idx)
+                        .cloned()
+                        .unwrap_or_default()
+                });
 
-            info!("{}", t_with_args("fas-policy-init", &fluent_args!(
-                "pid" => pid.to_string(),
-                "min" => (freqs.first().unwrap()/1000).to_string(),
-                "max" => (max_f/1000).to_string(),
-                "weight" => format!("{:.2}", profile.capacity_weight)
-            )));
+            info!(
+                "{}",
+                t_with_args(
+                    "fas-policy-init",
+                    &fluent_args!(
+                        "pid" => pid.to_string(),
+                        "min" => (freqs.first().unwrap()/1000).to_string(),
+                        "max" => (max_f/1000).to_string(),
+                        "weight" => format!("{:.2}", profile.capacity_weight)
+                    )
+                )
+            );
 
-            self.policies.push(PolicyController::new(mw, nw, freqs, pid as usize, profile, max_f));
+            self.policies.push(PolicyController::new(
+                mw,
+                nw,
+                freqs,
+                pid as usize,
+                profile,
+                max_f,
+            ));
         }
 
-        self.current_target_fps = *self.fps_gears.iter().reduce(|a, b| if a > b { a } else { b }).unwrap_or(&60.0);
+        self.current_target_fps = *self
+            .fps_gears
+            .iter()
+            .reduce(|a, b| if a > b { a } else { b })
+            .unwrap_or(&60.0);
         self.reset_runtime();
         self.refresh_cached_values();
         self.init_time = Instant::now();
@@ -1086,13 +1330,19 @@ impl FasController {
         self.temp_threshold = fas_rules.core_temp_threshold;
         self.apply_freqs();
 
-        info!("{}", t_with_args("fas-init-summary", &fluent_args!(
-            "fps" => format!("{:.0}", self.current_target_fps),
-            "margin" => format!("{:.1}", self.fps_margin),
-            "clusters" => self.policies.len().to_string(),
-            "perf" => format!("{:.2}", self.perf_index),
-            "profiles" => self.cfg.per_app_profiles.len().to_string()
-        )));
+        info!(
+            "{}",
+            t_with_args(
+                "fas-init-summary",
+                &fluent_args!(
+                    "fps" => format!("{:.0}", self.current_target_fps),
+                    "margin" => format!("{:.1}", self.fps_margin),
+                    "clusters" => self.policies.len().to_string(),
+                    "perf" => format!("{:.2}", self.perf_index),
+                    "profiles" => self.cfg.per_app_profiles.len().to_string()
+                )
+            )
+        );
     }
 
     // ════════════════════════════════════════════════════════════
@@ -1111,13 +1361,20 @@ impl FasController {
         if actual_ms > self.cfg.app_switch_gap_ms {
             self.reset_runtime();
             self.perf_index = self.cfg.app_switch_resume_perf;
-            self.gear_dampen_frames = scale_frames(self.cfg.gear_dampen_frames, self.current_target_fps);
+            self.gear_dampen_frames =
+                scale_frames(self.cfg.gear_dampen_frames, self.current_target_fps);
             self.post_loading_downgrade_guard = self.cfg.post_loading_downgrade_guard;
             self.apply_freqs();
-            info!("{}", t_with_args("fas-app-switch", &fluent_args!(
-                "ms" => format!("{:.0}", actual_ms),
-                "perf" => format!("{:.2}", self.perf_index)
-            )));
+            info!(
+                "{}",
+                t_with_args(
+                    "fas-app-switch",
+                    &fluent_args!(
+                        "ms" => format!("{:.0}", actual_ms),
+                        "perf" => format!("{:.2}", self.perf_index)
+                    )
+                )
+            );
             return true;
         }
 
@@ -1136,22 +1393,33 @@ impl FasController {
             if !self.is_loading && self.loading_cumulative_ms > self.cfg.loading_cumulative_ms {
                 self.is_loading = true;
                 let old = self.perf_index;
-                self.perf_index = self.perf_index
+                self.perf_index = self
+                    .perf_index
                     .clamp(self.cfg.loading_perf_floor, self.cfg.loading_perf_ceiling);
-                if old != self.perf_index { self.apply_freqs(); }
-                info!("{}", t_with_args("fas-loading-start", &fluent_args!(
-                    "frames" => self.loading_frames.to_string(),
-                    "ms" => format!("{:.0}", self.loading_cumulative_ms),
-                    "old_perf" => format!("{:.2}", old),
-                    "new_perf" => format!("{:.2}", self.perf_index)
-                )));
+                if old != self.perf_index {
+                    self.apply_freqs();
+                }
+                info!(
+                    "{}",
+                    t_with_args(
+                        "fas-loading-start",
+                        &fluent_args!(
+                            "frames" => self.loading_frames.to_string(),
+                            "ms" => format!("{:.0}", self.loading_cumulative_ms),
+                            "old_perf" => format!("{:.2}", old),
+                            "new_perf" => format!("{:.2}", self.perf_index)
+                        )
+                    )
+                );
             }
             return true;
         }
 
         if self.loading_frames > 0 {
             self.loading_normal_tolerance += 1;
-            if self.loading_normal_tolerance < self.cfg.loading_normal_tolerance { return true; }
+            if self.loading_normal_tolerance < self.cfg.loading_normal_tolerance {
+                return true;
+            }
             self.loading_frames = 0;
             self.loading_cumulative_ms = 0.0;
             self.loading_normal_tolerance = 0;
@@ -1169,10 +1437,17 @@ impl FasController {
             let ceil = self.effective_perf_ceil();
             self.perf_index = self.cfg.post_loading_perf.clamp(floor, ceil);
             self.post_loading_ignore = self.cfg.post_loading_ignore_frames;
-            self.gear_dampen_frames = scale_frames(self.cfg.gear_dampen_frames, self.current_target_fps);
+            self.gear_dampen_frames =
+                scale_frames(self.cfg.gear_dampen_frames, self.current_target_fps);
             self.post_loading_downgrade_guard = self.cfg.post_loading_downgrade_guard;
             self.apply_freqs();
-            info!("{}", t_with_args("fas-loading-exit", &fluent_args!("perf" => format!("{:.2}", self.perf_index))));
+            info!(
+                "{}",
+                t_with_args(
+                    "fas-loading-exit",
+                    &fluent_args!("perf" => format!("{:.2}", self.perf_index))
+                )
+            );
         }
 
         false
@@ -1196,34 +1471,47 @@ impl FasController {
                 && !self.downgrade_boost_active
             {
                 let ref_fps = self.fps_window.recent_mean(15).max(avg_fps);
-                let best = self.fps_gears.iter().copied()
+                let best = self
+                    .fps_gears
+                    .iter()
+                    .copied()
                     .filter(|&g| g <= ref_fps + 15.0 && g > tfps + 0.5)
-                    .reduce(f32::max).unwrap_or(next);
+                    .reduce(f32::max)
+                    .unwrap_or(next);
                 self.consecutive_downgrade_count = 0;
                 self.stable_gear_frames = 0;
-                return GearDecision::Upgrade { target: best, perf: 0.60, dampen: scale_frames(30, best) };
+                return GearDecision::Upgrade {
+                    target: best,
+                    perf: 0.60,
+                    dampen: scale_frames(30, best),
+                };
             }
 
             if self.upgrade_cooldown == 0 {
                 let confirm = scale_frames(self.cfg.upgrade_confirm_frames, tfps);
-                if recent30 >= next - 10.0 && avg_fps >= tfps * 0.9 && self.fps_window.count() >= 60 {
+                if recent30 >= next - 10.0 && avg_fps >= tfps * 0.9 && self.fps_window.count() >= 60
+                {
                     self.upgrade_confirm_frames += 1;
                     self.downgrade_confirm_frames = 0;
                     if self.upgrade_confirm_frames >= confirm {
                         self.consecutive_downgrade_count = 0;
                         self.stable_gear_frames = 0;
                         return GearDecision::Upgrade {
-                            target: next, perf: self.perf_index,
+                            target: next,
+                            perf: self.perf_index,
                             dampen: scale_frames(self.cfg.gear_dampen_frames, next),
                         };
                     }
-                } else if avg_fps >= tfps - 5.0 && self.perf_index < 0.50
-                    && self.fps_window.count() >= 90 && !self.downgrade_boost_active
+                } else if avg_fps >= tfps - 5.0
+                    && self.perf_index < 0.50
+                    && self.fps_window.count() >= 90
+                    && !self.downgrade_boost_active
                 {
                     self.upgrade_confirm_frames += 1;
                     if self.upgrade_confirm_frames >= confirm * 2 {
                         return GearDecision::Upgrade {
-                            target: next, perf: (self.perf_index + 0.15).min(0.65),
+                            target: next,
+                            perf: (self.perf_index + 0.15).min(0.65),
                             dampen: scale_frames(self.cfg.gear_dampen_frames, next),
                         };
                     }
@@ -1243,14 +1531,21 @@ impl FasController {
                     if self.upgrade_confirm_frames >= confirm {
                         self.consecutive_downgrade_count = 0;
                         self.stable_gear_frames = 0;
-                        info!("{}", t_with_args("fas-low-perf-upgrade", &fluent_args!(
-                            "perf" => format!("{:.2}", self.perf_index),
-                            "avg" => format!("{:.1}", avg_fps),
-                            "stddev" => format!("{:.1}", self.fps_window.stddev()),
-                            "fps" => format!("{:.0}", next)
-                        )));
+                        info!(
+                            "{}",
+                            t_with_args(
+                                "fas-low-perf-upgrade",
+                                &fluent_args!(
+                                    "perf" => format!("{:.2}", self.perf_index),
+                                    "avg" => format!("{:.1}", avg_fps),
+                                    "stddev" => format!("{:.1}", self.fps_window.stddev()),
+                                    "fps" => format!("{:.0}", next)
+                                )
+                            )
+                        );
                         return GearDecision::Upgrade {
-                            target: next, perf: (self.perf_index + 0.20).min(0.65),
+                            target: next,
+                            perf: (self.perf_index + 0.20).min(0.65),
                             dampen: scale_frames(self.cfg.gear_dampen_frames, next),
                         };
                     }
@@ -1277,7 +1572,9 @@ impl FasController {
                 if is_extreme {
                     if let Some(native) = self.detect_native_gear(avg_fps) {
                         return GearDecision::Downgrade {
-                            target: native, perf: 0.55, dampen: scale_frames(30, native),
+                            target: native,
+                            perf: 0.55,
+                            dampen: scale_frames(30, native),
                         };
                     }
                     self.cancel_boost();
@@ -1288,27 +1585,41 @@ impl FasController {
                 } else if !self.downgrade_boost_active && self.downgrade_confirm_frames == 0 {
                     let boost_inc = self.scaled_boost_inc();
                     self.downgrade_boost_active = true;
-                    let scaled_duration = scale_frames(self.cfg.downgrade_boost_duration, self.current_target_fps);
+                    let scaled_duration =
+                        scale_frames(self.cfg.downgrade_boost_duration, self.current_target_fps);
                     self.downgrade_boost_remaining = scaled_duration;
                     self.downgrade_boost_perf_saved = self.perf_index;
                     self.perf_index = (self.perf_index + boost_inc).min(0.90);
-                    info!("{}", t_with_args("fas-downgrade-boost", &fluent_args!(
-                        "avg" => format!("{:.1}", avg_fps),
-                        "old" => format!("{:.2}", self.downgrade_boost_perf_saved),
-                        "new" => format!("{:.2}", self.perf_index),
-                        "inc" => format!("{:.3}", boost_inc)
-                    )));
+                    info!(
+                        "{}",
+                        t_with_args(
+                            "fas-downgrade-boost",
+                            &fluent_args!(
+                                "avg" => format!("{:.1}", avg_fps),
+                                "old" => format!("{:.2}", self.downgrade_boost_perf_saved),
+                                "new" => format!("{:.2}", self.perf_index),
+                                "inc" => format!("{:.3}", boost_inc)
+                            )
+                        )
+                    );
                 } else if self.downgrade_boost_active && self.downgrade_boost_remaining > 0 {
                     self.downgrade_boost_remaining -= 1;
                     if self.downgrade_boost_remaining == 0 {
                         // Gradual decay instead of instant cliff restore
-                        let blended = self.perf_index * 0.70 + self.downgrade_boost_perf_saved * 0.30;
+                        let blended =
+                            self.perf_index * 0.70 + self.downgrade_boost_perf_saved * 0.30;
                         self.perf_index = blended.max(self.downgrade_boost_perf_saved);
                         self.downgrade_boost_active = false;
                         self.downgrade_confirm_frames += 10;
-                        info!("{}", t_with_args("fas-boost-expired", &fluent_args!(
-                            "confirm" => self.downgrade_confirm_frames.to_string()
-                        )));
+                        info!(
+                            "{}",
+                            t_with_args(
+                                "fas-boost-expired",
+                                &fluent_args!(
+                                    "confirm" => self.downgrade_confirm_frames.to_string()
+                                )
+                            )
+                        );
                     }
                 } else {
                     self.downgrade_confirm_frames += 1;
@@ -1319,13 +1630,16 @@ impl FasController {
                     let old_fps = tfps;
                     if (old_fps - self.last_downgrade_from_fps).abs() < 1.0 {
                         self.consecutive_downgrade_count += 1;
-                    } else { self.consecutive_downgrade_count = 1; }
+                    } else {
+                        self.consecutive_downgrade_count = 1;
+                    }
                     self.last_downgrade_from_fps = old_fps;
                     let backoff = 1u32 << self.consecutive_downgrade_count.min(4);
                     self.upgrade_cooldown = self.cfg.upgrade_cooldown_after_downgrade * backoff;
                     self.stable_gear_frames = 0;
                     return GearDecision::Downgrade {
-                        target: prev, perf: self.perf_index,
+                        target: prev,
+                        perf: self.perf_index,
                         dampen: scale_frames(self.cfg.gear_dampen_frames, prev),
                     };
                 }
@@ -1370,11 +1684,16 @@ impl FasController {
             self.jank_streak += 1;
             let streak_m = (1.0 - (-0.4 * self.jank_streak as f32).exp()).clamp(0.30, 0.85);
             let fps_urgency = (self.current_target_fps / 60.0).sqrt().clamp(1.0, 1.6);
-            let inc = if damped { 0.050 * fps_urgency } else { 0.080 * fps_urgency };
+            let inc = if damped {
+                0.050 * fps_urgency
+            } else {
+                0.080 * fps_urgency
+            };
             self.perf_index += inc * jank_scale * streak_m;
             act = "crit";
             self.consecutive_normal_frames = 0;
-            self.jank_cooldown = scale_frames(self.cfg.jank_cooldown_frames * 3, self.current_target_fps);
+            self.jank_cooldown =
+                scale_frames(self.cfg.jank_cooldown_frames * 3, self.current_target_fps);
             // 紧急避险：Jank 发生时立刻重置 util 偏移，
             // 恢复严格的 target_fps 目标，避免 PID 在团战突发时还在"偷懒"
             self.target_fps_offset = 0.0;
@@ -1400,13 +1719,19 @@ impl FasController {
             self.jank_streak += 1;
             let streak_m = (1.0 - (-0.35 * self.jank_streak as f32).exp()).clamp(0.30, 0.70);
             let fps_urgency = (self.current_target_fps / 60.0).sqrt().clamp(1.0, 1.4);
-            let inc = if damped { 0.025 * fps_urgency } else { 0.040 * fps_urgency };
+            let inc = if damped {
+                0.025 * fps_urgency
+            } else {
+                0.040 * fps_urgency
+            };
             self.perf_index += inc * jank_scale * streak_m;
             act = "heavy";
             self.consecutive_normal_frames = 0;
             let fps_cd_scale = (self.current_target_fps / 60.0).clamp(1.0, 2.5);
             self.jank_cooldown = self.jank_cooldown.max(
-                (scale_frames(self.cfg.jank_cooldown_frames, self.current_target_fps) as f32 * fps_cd_scale) as u32);
+                (scale_frames(self.cfg.jank_cooldown_frames, self.current_target_fps) as f32
+                    * fps_cd_scale) as u32,
+            );
             // heavy jank 也重置偏移，但只在偏移较大时才强制重置
             if self.target_fps_offset < -1.0 {
                 self.target_fps_offset = 0.0;
@@ -1418,18 +1743,31 @@ impl FasController {
             if guard_perf > self.post_jank_perf_floor {
                 self.post_jank_perf_floor = guard_perf;
             }
-            self.post_jank_guard_frames = self.post_jank_guard_frames.max(
-                scale_frames(30, self.current_target_fps));
+            self.post_jank_guard_frames = self
+                .post_jank_guard_frames
+                .max(scale_frames(30, self.current_target_fps));
         } else {
             self.jank_streak = 0;
             self.consecutive_normal_frames += 1;
             // jank_cooldown 期间传入 0.0 让 util_gain=1.0，
             // 确保从卡顿恢复的过渡期 PID 全力拉频，不被旧的低 util 数据拖后腿
-            let pid_util = if self.jank_cooldown > 0 { 0.0 } else { self.ema_fg_util };
+            let pid_util = if self.jank_cooldown > 0 {
+                0.0
+            } else {
+                self.ema_fg_util
+            };
             let raw = self.pid.compute(ema_err, inst_err, norm, pid_util);
             if raw > 0.0 {
-                let d = if self.downgrade_boost_active { 0.0 } else { 1.0 };
-                let floor_guard = if self.perf_index < floor + 0.15 { 0.3 } else { 1.0 };
+                let d = if self.downgrade_boost_active {
+                    0.0
+                } else {
+                    1.0
+                };
+                let floor_guard = if self.perf_index < floor + 0.15 {
+                    0.3
+                } else {
+                    1.0
+                };
                 // 目标分裂安全护栏：
                 // 当 target_fps_offset < 0 时，PID 的 effective target 低于齿轮的 raw target。
                 // 如果实际 fps 低于 raw target，PID 不应该认为"任务完成"而激进衰减，
@@ -1439,7 +1777,11 @@ impl FasController {
                 let split_guard = if self.target_fps_offset < -0.5
                     && avg < self.current_target_fps - 1.0
                     && avg > self.effective_target_fps() - 1.0
-                { 0.3 } else { 1.0 };
+                {
+                    0.3
+                } else {
+                    1.0
+                };
                 self.perf_index -= raw * d * norm * floor_guard * split_guard;
                 act = "pid-decay";
             } else {
@@ -1447,7 +1789,11 @@ impl FasController {
                 // 防止恢复帧到来后 perf 在 2-3 帧内从高位断崖回落。
                 // 原值 0.70 太激进，日志显示 crit 后 P 从 1.0 → 0.35 仅需 3 帧。
                 let jd = if self.jank_cooldown > 0 { 0.25 } else { 1.0 };
-                let bd = if self.downgrade_boost_active { 0.0 } else { 1.0 };
+                let bd = if self.downgrade_boost_active {
+                    0.0
+                } else {
+                    1.0
+                };
                 let dd = if damped { 0.5 } else { 1.0 };
                 self.perf_index += (-raw) * jd * bd * dd * norm;
                 act = "pid-inc";
@@ -1470,10 +1816,7 @@ impl FasController {
         }
 
         // perf_floor 长期死锁检测
-        if self.perf_index <= floor + 0.01
-            && avg > 3.0
-            && avg < self.current_target_fps * 0.50
-        {
+        if self.perf_index <= floor + 0.01 && avg > 3.0 && avg < self.current_target_fps * 0.50 {
             self.floor_stuck_frames += 1;
             let stuck_threshold = (self.current_target_fps * 2.0) as u32;
             if self.floor_stuck_frames >= stuck_threshold {
@@ -1482,12 +1825,18 @@ impl FasController {
                 self.pid.reset();
                 self.floor_stuck_frames = 0;
                 act = "floor-rescue";
-                info!("{}", t_with_args("fas-floor-rescue", &fluent_args!(
-                    "frames" => stuck_threshold.to_string(),
-                    "old" => format!("{:.2}", old),
-                    "avg" => format!("{:.1}", avg),
-                    "new" => format!("{:.2}", self.perf_index)
-                )));
+                info!(
+                    "{}",
+                    t_with_args(
+                        "fas-floor-rescue",
+                        &fluent_args!(
+                            "frames" => stuck_threshold.to_string(),
+                            "old" => format!("{:.2}", old),
+                            "avg" => format!("{:.1}", avg),
+                            "new" => format!("{:.2}", self.perf_index)
+                        )
+                    )
+                );
             }
         } else {
             self.floor_stuck_frames = 0;
@@ -1519,7 +1868,9 @@ impl FasController {
         } else {
             (self.cfg.max_inc_normal * scale).max(0.065)
         };
-        if self.perf_index > old_perf + max_inc { self.perf_index = old_perf + max_inc; }
+        if self.perf_index > old_perf + max_inc {
+            self.perf_index = old_perf + max_inc;
+        }
         if damped && self.perf_index > self.cfg.damped_perf_cap {
             self.perf_index = self.cfg.damped_perf_cap;
         }
@@ -1550,9 +1901,19 @@ impl FasController {
         {
             let fps_dampen = (60.0 / self.current_target_fps.max(30.0)).powf(0.40);
             // 衰减步长额外乘以 0.6，降低高刷下的衰减激进度
-            let decay_scale = if self.current_target_fps > 90.0 { 0.6 } else { 1.0 };
-            let step = ((self.perf_index - 0.50) / 0.50 * self.cfg.fast_decay_max_step * fps_dampen * decay_scale)
-                .clamp(self.cfg.fast_decay_min_step * fps_dampen, self.cfg.fast_decay_max_step * fps_dampen * decay_scale);
+            let decay_scale = if self.current_target_fps > 90.0 {
+                0.6
+            } else {
+                1.0
+            };
+            let step = ((self.perf_index - 0.50) / 0.50
+                * self.cfg.fast_decay_max_step
+                * fps_dampen
+                * decay_scale)
+                .clamp(
+                    self.cfg.fast_decay_min_step * fps_dampen,
+                    self.cfg.fast_decay_max_step * fps_dampen * decay_scale,
+                );
             self.perf_index -= step;
             self.consecutive_normal_frames = 0;
         }
@@ -1563,9 +1924,12 @@ impl FasController {
             && self.fps_window.count() >= 30
         {
             let fps_scale = (60.0 / self.current_target_fps.max(30.0)).clamp(0.4, 1.0);
-            let s = ((avg_fps - self.current_target_fps) / self.current_target_fps * 0.04 * fps_scale)
-                .clamp(0.0, 0.008 * fps_scale.max(0.5));
-            if s > 0.0005 { self.perf_index -= s; }
+            let s =
+                ((avg_fps - self.current_target_fps) / self.current_target_fps * 0.04 * fps_scale)
+                    .clamp(0.0, 0.008 * fps_scale.max(0.5));
+            if s > 0.0005 {
+                self.perf_index -= s;
+            }
         }
 
         self.perf_index = self.perf_index.clamp(floor, ceil);
@@ -1579,7 +1943,8 @@ impl FasController {
                 self.stable_gear_frames = self.stable_gear_frames.saturating_sub(3);
             }
             if self.stable_gear_frames >= 900 {
-                self.consecutive_downgrade_count = self.consecutive_downgrade_count.saturating_sub(1);
+                self.consecutive_downgrade_count =
+                    self.consecutive_downgrade_count.saturating_sub(1);
                 self.stable_gear_frames = 0;
             }
         }
@@ -1590,22 +1955,37 @@ impl FasController {
     // ════════════════════════════════════════════════════════════
 
     pub fn update_frame(&mut self, frame_delta_ns: u64) {
-        if frame_delta_ns == 0 || self.policies.is_empty() { return; }
+        if frame_delta_ns == 0 || self.policies.is_empty() {
+            return;
+        }
 
         let actual_ms = frame_delta_ns as f32 / 1_000_000.0;
         let is_heavy = actual_ms > self.cfg.heavy_frame_threshold_ms;
         let max_ns = (self.cfg.fixed_max_frame_ms * 1_000_000.0) as u64;
 
-        if frame_delta_ns < self.min_frame_ns() { return; }
+        if frame_delta_ns < self.min_frame_ns() {
+            return;
+        }
 
         // Phase 1
-        if self.handle_early_exit(actual_ms) { return; }
+        if self.handle_early_exit(actual_ms) {
+            return;
+        }
 
         // Phase 2
-        if self.handle_loading(actual_ms, is_heavy) { return; }
-        if self.is_loading { return; }
-        if self.post_loading_ignore > 0 { self.post_loading_ignore -= 1; return; }
-        if frame_delta_ns > max_ns { return; }
+        if self.handle_loading(actual_ms, is_heavy) {
+            return;
+        }
+        if self.is_loading {
+            return;
+        }
+        if self.post_loading_ignore > 0 {
+            self.post_loading_ignore -= 1;
+            return;
+        }
+        if frame_delta_ns > max_ns {
+            return;
+        }
 
         // 帧率采样
         let current_fps = 1_000_000_000.0 / frame_delta_ns as f32;
@@ -1621,8 +2001,16 @@ impl FasController {
 
         // Phase 3: 齿轮
         match self.evaluate_gear(avg_fps, recent30) {
-            GearDecision::Upgrade { target, perf, dampen } |
-            GearDecision::Downgrade { target, perf, dampen } => {
+            GearDecision::Upgrade {
+                target,
+                perf,
+                dampen,
+            }
+            | GearDecision::Downgrade {
+                target,
+                perf,
+                dampen,
+            } => {
                 self.do_gear_switch(target, perf, dampen);
                 self.apply_freqs();
                 return;
@@ -1649,21 +2037,27 @@ impl FasController {
             let eff_target = self.effective_target_fps();
             let ema_err = 1000.0 / (eff_target - self.fps_margin).max(1.0) - self.ema_actual_ms;
             let inst_err = 1000.0 / eff_target.max(1.0) - actual_ms;
-            info!("{}", t_with_args("fas-tick-log", &fluent_args!(
-                "target" => format!("{:.0}", self.current_target_fps),
-                "avg" => format!("{:.1}", avg_fps),
-                "ms" => format!("{:.2}", actual_ms),
-                "ema" => format!("{:.2}", self.ema_actual_ms),
-                "err_ema" => format!("{:+.2}", ema_err),
-                "err_inst" => format!("{:+.2}", inst_err),
-                "act" => act,
-                "perf" => format!("{:.3}", self.perf_index),
-                "util" => format!("{:.2}", self.foreground_max_util),
-                "cd" => if self.upgrade_cooldown > 0 { " cd" } else { "" },
-                "damp" => if self.gear_dampen_frames > 0 { " damp" } else { "" },
-                "temp" => if self.current_temperature > 0.0 { format!(" T:{:.0}℃", self.current_temperature) } else { "".to_string() },
-                "offset" => if self.target_fps_offset.abs() > 0.05 { format!(" off:{:+.1}", self.target_fps_offset) } else { "".to_string() }
-            )));
+            info!(
+                "{}",
+                t_with_args(
+                    "fas-tick-log",
+                    &fluent_args!(
+                        "target" => format!("{:.0}", self.current_target_fps),
+                        "avg" => format!("{:.1}", avg_fps),
+                        "ms" => format!("{:.2}", actual_ms),
+                        "ema" => format!("{:.2}", self.ema_actual_ms),
+                        "err_ema" => format!("{:+.2}", ema_err),
+                        "err_inst" => format!("{:+.2}", inst_err),
+                        "act" => act,
+                        "perf" => format!("{:.3}", self.perf_index),
+                        "util" => format!("{:.2}", self.foreground_max_util),
+                        "cd" => if self.upgrade_cooldown > 0 { " cd" } else { "" },
+                        "damp" => if self.gear_dampen_frames > 0 { " damp" } else { "" },
+                        "temp" => if self.current_temperature > 0.0 { format!(" T:{:.0}℃", self.current_temperature) } else { "".to_string() },
+                        "offset" => if self.target_fps_offset.abs() > 0.05 { format!(" off:{:+.1}", self.target_fps_offset) } else { "".to_string() }
+                    )
+                )
+            );
         }
 
         self.apply_freqs();
@@ -1676,14 +2070,21 @@ impl FasController {
         let budget_ms = 1000.0 / eff_target.max(1.0);
         let norm = self.cached_norm;
         let ema_input_ms = {
-            let base = if self.fps_window.count() >= 8 && avg_fps > 5.0
-                && avg_fps < eff_target * 0.50
-            { 1000.0 / avg_fps } else { budget_ms };
+            let base =
+                if self.fps_window.count() >= 8 && avg_fps > 5.0 && avg_fps < eff_target * 0.50 {
+                    1000.0 / avg_fps
+                } else {
+                    budget_ms
+                };
             let cap = base * 2.0;
             let extreme = base * 4.0;
-            if actual_ms > extreme { base + 1.0 }
-            else if actual_ms > cap { cap }
-            else { actual_ms }
+            if actual_ms > extreme {
+                base + 1.0
+            } else if actual_ms > cap {
+                cap
+            } else {
+                actual_ms
+            }
         };
         if self.ema_actual_ms <= 0.0 {
             self.ema_actual_ms = ema_input_ms;
@@ -1691,7 +2092,11 @@ impl FasController {
             let fps_factor = (self.current_target_fps / 60.0).clamp(0.5, 2.5);
             let a_up = (0.15 * fps_factor).clamp(0.10, 0.35);
             let a_down = ((0.25 + (1.0 - norm) * 0.25) * fps_factor).clamp(0.15, 0.45);
-            let a = if ema_input_ms > self.ema_actual_ms { a_up } else { a_down };
+            let a = if ema_input_ms > self.ema_actual_ms {
+                a_up
+            } else {
+                a_down
+            };
             self.ema_actual_ms = self.ema_actual_ms * (1.0 - a) + ema_input_ms * a;
         }
     }

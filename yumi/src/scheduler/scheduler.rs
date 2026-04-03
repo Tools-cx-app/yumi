@@ -21,9 +21,9 @@ use anyhow::Result;
 use std::fs;
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::fluent_args;
 use crate::i18n::{t, t_with_args};
-use crate::fluent_args; 
-use crate::utils; 
+use crate::utils;
 
 pub struct CpuScheduler {
     config: Arc<RwLock<Config>>,
@@ -49,19 +49,27 @@ impl CpuScheduler {
         let mode_name = self.current_mode_name.lock().unwrap().clone();
 
         if mode_name == "fas" {
-            log::debug!("Currently in FAS mode, Scheduler is skipping static settings application.");
+            log::debug!(
+                "Currently in FAS mode, Scheduler is skipping static settings application."
+            );
             return Ok(());
         }
 
-        log::info!("{}", t_with_args(
-            "apply-settings-for-mode",
-            &fluent_args!{"mode" => mode_name.as_str()}
-        ));
-            
-        log::info!("{}", t_with_args(
-            "settings-applied-success",
-            &fluent_args!{"mode" => mode_name.as_str()}
-        ));
+        log::info!(
+            "{}",
+            t_with_args(
+                "apply-settings-for-mode",
+                &fluent_args! {"mode" => mode_name.as_str()}
+            )
+        );
+
+        log::info!(
+            "{}",
+            t_with_args(
+                "settings-applied-success",
+                &fluent_args! {"mode" => mode_name.as_str()}
+            )
+        );
         Ok(())
     }
 
@@ -74,12 +82,16 @@ impl CpuScheduler {
 
     fn apply_cpu_idle_governor(&self) -> Result<()> {
         let config = self.config.read().unwrap();
-        if config.function.cpu_idle_scaling_governor && !config.cpu_idle.current_governor.is_empty() {
+        if config.function.cpu_idle_scaling_governor && !config.cpu_idle.current_governor.is_empty()
+        {
             if self.sys_path_exist.cpuidle_governor_exist {
-                let _ = utils::try_write_file("/sys/devices/system/cpu/cpuidle/current_governor", &config.cpu_idle.current_governor);
+                let _ = utils::try_write_file(
+                    "/sys/devices/system/cpu/cpuidle/current_governor",
+                    &config.cpu_idle.current_governor,
+                );
             }
         }
-        log::info!("{}",t("apply-cpu-idle-governor-start"));
+        log::info!("{}", t("apply-cpu-idle-governor-start"));
         Ok(())
     }
 
@@ -101,25 +113,38 @@ impl CpuScheduler {
             for entry in entries.flatten() {
                 let dev_path = entry.path();
                 let queue_path = dev_path.join("queue");
-                if !queue_path.exists() { continue; }
+                if !queue_path.exists() {
+                    continue;
+                }
 
                 if !io.scheduler.is_empty() {
                     let p = queue_path.join("scheduler");
-                    if p.exists() { let _ = utils::try_write_file(&p, &io.scheduler); }
+                    if p.exists() {
+                        let _ = utils::try_write_file(&p, &io.scheduler);
+                    }
                 }
                 if !io.read_ahead_kb.is_empty() {
                     let p = queue_path.join("read_ahead_kb");
-                    if p.exists() { let _ = utils::try_write_file(&p, &io.read_ahead_kb); }
+                    if p.exists() {
+                        let _ = utils::try_write_file(&p, &io.read_ahead_kb);
+                    }
                 }
                 if !io.nomerges.is_empty() {
                     let p = queue_path.join("nomerges");
-                    if p.exists() { let _ = utils::try_write_file(&p, &io.nomerges); }
+                    if p.exists() {
+                        let _ = utils::try_write_file(&p, &io.nomerges);
+                    }
                 }
                 if !io.iostats.is_empty() {
                     let p = queue_path.join("iostats");
-                    if p.exists() { let _ = utils::try_write_file(&p, &io.iostats); }
+                    if p.exists() {
+                        let _ = utils::try_write_file(&p, &io.iostats);
+                    }
                 }
-                log::debug!("IOOptimization: applied to {:?}", dev_path.file_name().unwrap_or_default());
+                log::debug!(
+                    "IOOptimization: applied to {:?}",
+                    dev_path.file_name().unwrap_or_default()
+                );
             }
         }
 

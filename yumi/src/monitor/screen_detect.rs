@@ -15,19 +15,19 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use kobject_uevent::{ActionType, UEvent};
+use log::info;
+use netlink_sys::{Socket, SocketAddr, protocols::NETLINK_KOBJECT_UEVENT};
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
+use std::process;
 use std::sync::{Arc, Mutex};
-use log::{info};
-use std::process; 
 use std::thread;
 use std::time::Duration;
-use kobject_uevent::{UEvent, ActionType};
-use netlink_sys::{protocols::NETLINK_KOBJECT_UEVENT, Socket, SocketAddr};
 
-use crate::i18n::{t, t_with_args};
 use crate::fluent_args;
+use crate::i18n::{t, t_with_args};
 
 fn read_int_file(path: &str) -> Result<i32, Box<dyn Error>> {
     let mut content = String::new();
@@ -38,10 +38,22 @@ fn read_int_file(path: &str) -> Result<i32, Box<dyn Error>> {
 fn update_state_if_changed(state_arc: &Arc<Mutex<bool>>, new_state: bool, source: &str) {
     let mut state_lock = state_arc.lock().unwrap();
     if *state_lock != new_state {
-        info!("{}", t_with_args("screen-state-change-detected", &fluent_args!("source" => source)));
+        info!(
+            "{}",
+            t_with_args(
+                "screen-state-change-detected",
+                &fluent_args!("source" => source)
+            )
+        );
         *state_lock = new_state;
         let state_str = if new_state { "ON" } else { "OFF" };
-        info!("{}", t_with_args("screen-state-changed-value", &fluent_args!("state" => state_str)));
+        info!(
+            "{}",
+            t_with_args(
+                "screen-state-changed-value",
+                &fluent_args!("state" => state_str)
+            )
+        );
     }
 }
 
@@ -57,25 +69,30 @@ pub fn monitor_screen_state_uevent(state_arc: Arc<Mutex<bool>>) -> Result<(), Bo
             Ok((buf, _)) => {
                 if let Ok(event) = UEvent::from_netlink_packet(&buf) {
                     if event.subsystem == "power" {
-                         if let Some(action) = event.env.get("POWER_ACTION") {
-                            if action == "early_suspend" { update_state_if_changed(&state_arc, false, "power"); }
-                            else if action == "late_resume" { update_state_if_changed(&state_arc, true, "power"); }
-                         }
+                        if let Some(action) = event.env.get("POWER_ACTION") {
+                            if action == "early_suspend" {
+                                update_state_if_changed(&state_arc, false, "power");
+                            } else if action == "late_resume" {
+                                update_state_if_changed(&state_arc, true, "power");
+                            }
+                        }
                     } else if event.subsystem == "backlight" && event.action == ActionType::Change {
                         thread::sleep(Duration::from_millis(100));
                         let dev = event.devpath.display();
                         let bl_power = format!("/sys{}/bl_power", dev);
                         let actual = format!("/sys{}/actual_brightness", dev);
-                        
-                        let new_state = read_int_file(&bl_power).map(|v| v == 0)
-                            .or_else(|_| read_int_file(&actual).map(|v| v > 0)).ok();
-                        
+
+                        let new_state = read_int_file(&bl_power)
+                            .map(|v| v == 0)
+                            .or_else(|_| read_int_file(&actual).map(|v| v > 0))
+                            .ok();
+
                         if let Some(state) = new_state {
                             update_state_if_changed(&state_arc, state, "backlight");
                         }
                     }
                 }
-            },
+            }
             Err(_) => thread::sleep(Duration::from_secs(1)),
         }
     }

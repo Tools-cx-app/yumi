@@ -1,6 +1,6 @@
-use std::process::Command;
 use std::env;
 use std::path::Path;
+use std::process::Command;
 
 fn compile_bpf(src_name: &str, obj_name: &str, out_dir: &Path) -> std::path::PathBuf {
     let bpf_src = format!("src/bpf/{}", src_name);
@@ -15,7 +15,8 @@ fn compile_bpf(src_name: &str, obj_name: &str, out_dir: &Path) -> std::path::Pat
 
     let status = Command::new(clang_path)
         .args([
-            "-target", "bpfel-unknown-none", // 纯净 BPF 目标
+            "-target",
+            "bpfel-unknown-none", // 纯净 BPF 目标
             "-O2",
             "-c",
             "-fno-addrsig",
@@ -32,7 +33,10 @@ fn compile_bpf(src_name: &str, obj_name: &str, out_dir: &Path) -> std::path::Pat
     }
 
     // 这里会在执行 cargo build 时在控制台输出醒目的黄色日志！
-    println!("cargo:warning=✅ 成功编译 eBPF 字节码: {} -> {}", src_name, obj_name);
+    println!(
+        "cargo:warning=✅ 成功编译 eBPF 字节码: {} -> {}",
+        src_name, obj_name
+    );
 
     bpf_obj
 }
