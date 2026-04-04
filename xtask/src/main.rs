@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::Result;
 use fs_extra::{dir, file};
-use serde::{Deserialize};
+use serde::Deserialize;
 use zip::{CompressionMethod, write::FileOptions};
 
 use crate::zip_ext::zip_create_from_directory_with_options;
@@ -47,6 +47,11 @@ fn cal_git_code() -> Result<usize> {
     )?
     .trim()
     .parse::<usize>()?)
+}
+
+fn get_date() -> String {
+    let local = chrono::Local::now().format("%Y%m%d-%H%M");
+    local.to_string()
 }
 
 fn build() -> Result<()> {
@@ -91,9 +96,10 @@ fn build() -> Result<()> {
         .compression_level(Some(9));
     zip_create_from_directory_with_options(
         &Path::new("output").join(format!(
-            "yumi-{}-{}.zip",
+            "yumi-{}-{}-{}.zip",
             &data.package.version,
-            &cal_git_code()?
+            &cal_git_code()?,
+            get_date(),
         )),
         &temp_dir,
         |_| options,
