@@ -18,6 +18,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
   },
+  build: {
+    outDir: "../module/webroot",
+  },
   // 强制打包为相对路径，确保在 WebUI 环境下资源能加载
   base: './' 
 })
