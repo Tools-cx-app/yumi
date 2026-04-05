@@ -99,15 +99,10 @@ fn is_valid_user_app(pkg: &str, ignored_apps: &[String]) -> bool {
         || pkg.starts_with('/')
         || pkg.starts_with('.')
         || pkg.contains(':')
-    {
-        return false;
-    }
-    if IME_BLOCKLIST.contains(pkg) {
-        return false;
-    }
-    if ignored_apps
-        .iter()
-        .any(|ignored| pkg == ignored || pkg.contains(ignored))
+        || IME_BLOCKLIST.contains(pkg)
+        || ignored_apps
+            .iter()
+            .any(|ignored| pkg == ignored || pkg.contains(ignored))
     {
         return false;
     }
@@ -124,13 +119,11 @@ fn is_valid_user_app(pkg: &str, ignored_apps: &[String]) -> bool {
         "com.google.android.gms.ui" => false,
         "com.xiaomi.mibrain.speech" => false,
         _ => {
-            if pkg.contains("magisk") || pkg.contains("mtiodaemon") {
-                return false;
-            }
-            if pkg.contains("ads_monitor") {
-                return false;
-            }
-            if pkg.contains("inputmethod") {
+            if pkg.contains("magisk")
+                || pkg.contains("mtiodaemon")
+                || pkg.contains("ads_monitor")
+                || pkg.contains("inputmethod")
+            {
                 return false;
             }
             true
@@ -166,9 +159,10 @@ fn get_focused_app_from_cgroup(ignored_apps: &[String]) -> Result<(String, i32),
 
     let cached = VALID_CGROUP_IDX.load(Ordering::Relaxed);
     if cached < paths.len()
-        && let Some(res) = check_cgroup_path(paths[cached], ignored_apps) {
-            return Ok(res);
-        }
+        && let Some(res) = check_cgroup_path(paths[cached], ignored_apps)
+    {
+        return Ok(res);
+    }
 
     for (i, path) in paths.iter().enumerate() {
         if i == cached {
@@ -344,31 +338,30 @@ pub fn app_detection_loop(
             0.0
         };
 
-        if (last_package != final_pkg || force_refresh)
-            && !final_pkg.is_empty() {
-                set_current_package(&final_pkg, final_pid);
-                // 使用已获取的 config_snapshot，不再重复加锁
-                let new_mode = determine_mode(&config_snapshot, &final_pkg);
+        if (last_package != final_pkg || force_refresh) && !final_pkg.is_empty() {
+            set_current_package(&final_pkg, final_pid);
+            // 使用已获取的 config_snapshot，不再重复加锁
+            let new_mode = determine_mode(&config_snapshot, &final_pkg);
 
-                if last_mode != new_mode || force_refresh {
-                    info!(
-                        "{}",
-                        t_with_args(
-                            "app-detect-mode-change-pkg",
-                            &fluent_args!("old" => last_mode.clone(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())
-                        )
-                    );
-                    // ModeChange 事件现在携带 pid 字段
-                    let _ = tx.send(DaemonEvent::ModeChange {
-                        package_name: final_pkg.clone(),
-                        pid: final_pid,
-                        mode: new_mode.clone(),
-                        temperature: current_temp,
-                    });
-                    last_mode = new_mode;
-                }
-                last_package = final_pkg;
+            if last_mode != new_mode || force_refresh {
+                info!(
+                    "{}",
+                    t_with_args(
+                        "app-detect-mode-change-pkg",
+                        &fluent_args!("old" => last_mode.clone(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())
+                    )
+                );
+                // ModeChange 事件现在携带 pid 字段
+                let _ = tx.send(DaemonEvent::ModeChange {
+                    package_name: final_pkg.clone(),
+                    pid: final_pid,
+                    mode: new_mode.clone(),
+                    temperature: current_temp,
+                });
+                last_mode = new_mode;
             }
+            last_package = final_pkg;
+        }
 
         thread::sleep(Duration::from_millis(1500));
     }

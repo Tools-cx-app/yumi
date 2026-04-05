@@ -41,9 +41,10 @@ pub fn get_cpu_policies() -> Vec<i32> {
         for entry in entries.flatten() {
             if let Some(name) = entry.file_name().to_str()
                 && name.starts_with("policy")
-                    && let Ok(pid) = name["policy".len()..].parse::<i32>() {
-                        policies.push(pid);
-                    }
+                && let Ok(pid) = name["policy".len()..].parse::<i32>()
+            {
+                policies.push(pid);
+            }
         }
     }
     policies.sort_unstable();
