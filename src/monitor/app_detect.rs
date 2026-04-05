@@ -15,12 +15,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use dumpsys_rs::Dumpsys;
 use inotify::{Inotify, WatchMask};
 use log::{debug, info, warn};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -31,9 +32,6 @@ use crate::common::DaemonEvent;
 use crate::fluent_args;
 use crate::i18n::{t, t_with_args};
 use crate::utils;
-
-// 缓存有效的 Cgroup 路径索引，避免每次循环都去探测无效路径
-static VALID_CGROUP_IDX: AtomicUsize = AtomicUsize::new(usize::MAX);
 
 static CURRENT_PID: AtomicI32 = AtomicI32::new(0);
 
@@ -90,91 +88,121 @@ fn set_current_package(pkg: &str, pid: i32) {
     CURRENT_PID.store(pid, Ordering::Relaxed);
 }
 
-// ==================== [核心：纯 Cgroup 检测逻辑] ====================
+// ==================== [核心：纯 Dumpsys 检测逻辑] ====================
 
-/// 判断是否为有效的用户应用包名
-fn is_valid_user_app(pkg: &str, ignored_apps: &[String]) -> bool {
-    if pkg.is_empty()
-        || !pkg.contains('.')
-        || pkg.starts_with('/')
-        || pkg.starts_with('.')
-        || pkg.contains(':')
-        || IME_BLOCKLIST.contains(pkg)
-        || ignored_apps
-            .iter()
-            .any(|ignored| pkg == ignored || pkg.contains(ignored))
-    {
-        return false;
-    }
-    match pkg {
-        "com.android.systemui" => false,
-        "system_server" => false,
-        "surfaceflinger" => false,
-        "android.hardware.graphics.composer" => false,
-        "com.android.phone" => false,
-        "com.android.permissioncontroller" => false,
-        "yumi" => false,
-        "com.xiaomi.vtcamera" => false,
-        "com.android.providers.media.module" => false,
-        "com.google.android.gms.ui" => false,
-        "com.xiaomi.mibrain.speech" => false,
-        _ => {
-            if pkg.contains("magisk")
-                || pkg.contains("mtiodaemon")
-                || pkg.contains("ads_monitor")
-                || pkg.contains("inputmethod")
-            {
-                return false;
-            }
-            true
-        }
-    }
+#[derive(Default)]
+struct WindowsInfo {
+    pub visible_freeform_window: bool,
+    pub pid: i32,
 }
 
-// 提取核心检测逻辑
-fn check_cgroup_path(path: &str, ignored_apps: &[String]) -> Option<(String, i32)> {
-    if let Ok(content) = utils::read_file_content(path) {
-        let pids: Vec<&str> = content.split_whitespace().collect();
-        for pid_str in pids.iter().rev() {
-            let cmdline_path = format!("/proc/{}/cmdline", pid_str);
-            if let Ok(cmdline) = utils::read_file_content(&cmdline_path) {
-                let pkg_name = cmdline.split('\0').next().unwrap_or("").trim();
-                if is_valid_user_app(pkg_name, ignored_apps) {
-                    let pid = pid_str.parse::<i32>().unwrap_or(0);
-                    return Some((pkg_name.to_string(), pid));
+impl WindowsInfo {
+    pub fn new(dump: &str) -> Self {
+        let pid = Self::parse_top_app(dump);
+        let visible_freeform_window = dump.contains("freeform")
+            || dump.contains("FlexibleTaskCaptionView")
+            || dump.contains("FlexibleTaskIndicatorView");
+
+        Self {
+            visible_freeform_window,
+            pid,
+        }
+    }
+
+    fn parse_top_app(dump: &str) -> i32 {
+        let Some(focused_app_line) = dump
+            .lines()
+            .find(|line| line.trim().starts_with("mFocusedApp="))
+        else {
+            return 0;
+        };
+        let Some(package_name) = Self::extract_package_name(focused_app_line) else {
+            return 0;
+        };
+
+        // Try modern parser, if it fails, fall back to legacy parser.
+        let pid = Self::parse_a16_format(dump, package_name)
+            .or_else(|| Self::parse_a15_format(dump, package_name));
+
+        pid.unwrap_or(0)
+    }
+
+    fn extract_package_name(line: &str) -> Option<&str> {
+        line.split_whitespace()
+            .find(|p| p.contains('/'))?
+            .split('/')
+            .next()
+    }
+
+    // Modern Parser (Android 16+)
+    // Parses the PID from the `WINDOW MANAGER WINDOWS` section.
+    fn parse_a16_format(dump: &str, package_name: &str) -> Option<i32> {
+        let mut in_target_window_section = false;
+        for line in dump.lines() {
+            if in_target_window_section {
+                if line.contains("mSession=") {
+                    let session_part = line.split("mSession=").nth(1)?;
+                    let content_start = session_part.find('{')? + 1;
+                    let content_end = session_part.find('}')?;
+                    let content = &session_part[content_start..content_end];
+                    let pid_part = content.split_whitespace().nth(1)?;
+                    let pid_str = pid_part.split(':').next()?;
+                    return pid_str.parse::<i32>().ok();
                 }
+
+                if line.contains("Window #") {
+                    return None;
+                }
+            } else if line.contains("Window #") && line.contains(package_name) {
+                in_target_window_section = true;
             }
         }
+        None
     }
-    None
+
+    // Legacy Parser (Android 15 and older)
+    // Parses the PID from the `WINDOW MANAGER SESSIONS` section.
+    fn parse_a15_format(dump: &str, package_name: &str) -> Option<i32> {
+        let mut last_pid_found: Option<i32> = None;
+        for line in dump.lines() {
+            if line.starts_with("  Session Session{") {
+                let content_start = line.find('{')? + 1;
+                let content_end = line.find('}')?;
+                let content = &line[content_start..content_end];
+                let pid_part = content.split_whitespace().nth(1)?;
+                let pid_str = pid_part.split(':').next()?;
+                last_pid_found = pid_str.parse::<i32>().ok();
+            }
+
+            let trimmed_line = line.trim();
+            if trimmed_line.starts_with("mPackageName=")
+                && let Some(pkg) = trimmed_line.split('=').nth(1)
+                && pkg == package_name
+            {
+                return last_pid_found;
+            }
+        }
+        None
+    }
 }
 
-/// 从 Cgroup 读取前台应用
-fn get_focused_app_from_cgroup(ignored_apps: &[String]) -> Result<(String, i32), Box<dyn Error>> {
-    let paths = [
-        "/dev/cpuset/top-app/cgroup.procs",
-        "/sys/fs/cgroup/cpuset/top-app/cgroup.procs",
-        "/dev/stune/top-app/cgroup.procs",
-    ];
-
-    let cached = VALID_CGROUP_IDX.load(Ordering::Relaxed);
-    if cached < paths.len()
-        && let Some(res) = check_cgroup_path(paths[cached], ignored_apps)
-    {
-        return Ok(res);
-    }
-
-    for (i, path) in paths.iter().enumerate() {
-        if i == cached {
-            continue;
+fn get_focused_app(ignored_apps: &[String]) -> Result<(String, i32, bool), Box<dyn Error>> {
+    let mut dumper = loop {
+        match Dumpsys::new() {
+            Ok(b) => break b,
+            Err(_) => std::thread::sleep(Duration::from_secs(1)),
         }
-        if let Some(res) = check_cgroup_path(path, ignored_apps) {
-            VALID_CGROUP_IDX.store(i, Ordering::Relaxed);
-            return Ok(res);
-        }
-    }
+    };
+    dumper.insert_service("window")?;
+    let dump = dumper.dump("window", &["visible-apps"])?;
+    let info = WindowsInfo::new(&dump);
+    let pkg = utils::get_process_name(info.pid)?;
 
-    Err("No valid app found".into())
+    if ignored_apps.iter().any(|s| s != &pkg) || !IME_BLOCKLIST.contains(&pkg) {
+        Ok((pkg, info.pid, info.visible_freeform_window))
+    } else {
+        Err("No valid app found".into())
+    }
 }
 
 // ==================== [辅助函数] ====================
@@ -308,8 +336,8 @@ pub fn app_detection_loop(
         let config_snapshot = config_arc.lock().unwrap().clone();
         let ignored_apps = config_snapshot.ignored_apps.clone();
 
-        let (detected_pkg, detected_pid) = get_focused_app_from_cgroup(&ignored_apps)
-            .unwrap_or_else(|_| (last_package.clone(), get_current_pid()));
+        let (detected_pkg, detected_pid, visible_freeform) = get_focused_app(&ignored_apps)
+            .unwrap_or_else(|_| (last_package.clone(), get_current_pid(), false));
 
         let mut final_pkg = last_package.clone();
         let mut final_pid = get_current_pid();
@@ -338,7 +366,14 @@ pub fn app_detection_loop(
             0.0
         };
 
-        if (last_package != final_pkg || force_refresh) && !final_pkg.is_empty() {
+        if visible_freeform {
+            pending_package.clear();
+        }
+
+        if (last_package != final_pkg || force_refresh)
+            && !final_pkg.is_empty()
+            && !visible_freeform
+        {
             set_current_package(&final_pkg, final_pid);
             // 使用已获取的 config_snapshot，不再重复加锁
             let new_mode = determine_mode(&config_snapshot, &final_pkg);

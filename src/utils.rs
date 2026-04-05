@@ -87,6 +87,13 @@ pub fn watch_path<P: AsRef<Path>>(path_to_watch: P) -> Result<()> {
     Ok(())
 }
 
+pub fn get_process_name(pid: i32) -> Result<String> {
+    let cmdline = Path::new("/proc").join(pid.to_string()).join("cmdline");
+    let cmdline = fs::read_to_string(cmdline)?;
+    let cmdline = cmdline.split(':').next().unwrap_or_default();
+    Ok(cmdline.trim_matches(['\0']).trim().to_string())
+}
+
 // 辅助函数：读取文件内容为 String
 pub fn read_file_content(path: &str) -> Result<String> {
     let mut content = String::new();
@@ -108,22 +115,22 @@ pub fn find_cpu_temp_path() -> Result<String> {
         let path = entry.path();
         if path.is_dir()
             && let Some(dir_name) = path.file_name().and_then(|s| s.to_str())
-                && dir_name.starts_with("thermal_zone") {
-                    let type_path = path.join("type");
-                    // 修复 E0532 模式匹配错误: 直接使用 if let Ok(...)
-                    if let Ok(type_content) =
-                        read_file_content(type_path.to_str().unwrap_or_default())
-                        && (type_content.contains("soc_max")
-                            || type_content.contains("mtktscpu")
-                            || type_content.contains("cpu-1-")
-                            || type_content.contains("cpu-0-0-usr"))
-                        {
-                            let temp_path = path.join("temp");
-                            if temp_path.exists() {
-                                return Ok(temp_path.to_str().unwrap().to_string());
-                            }
-                        }
+            && dir_name.starts_with("thermal_zone")
+        {
+            let type_path = path.join("type");
+            // 修复 E0532 模式匹配错误: 直接使用 if let Ok(...)
+            if let Ok(type_content) = read_file_content(type_path.to_str().unwrap_or_default())
+                && (type_content.contains("soc_max")
+                    || type_content.contains("mtktscpu")
+                    || type_content.contains("cpu-1-")
+                    || type_content.contains("cpu-0-0-usr"))
+            {
+                let temp_path = path.join("temp");
+                if temp_path.exists() {
+                    return Ok(temp_path.to_str().unwrap().to_string());
                 }
+            }
+        }
     }
     Err(anyhow::anyhow!("Valid CPU thermal zone not found"))
 }
@@ -214,23 +221,24 @@ impl FastWriter {
 
     fn try_unmount(path: &Path) {
         if let Some(path_str) = path.to_str()
-            && let Ok(cpath) = std::ffi::CString::new(path_str) {
-                let ret = unsafe { libc::umount2(cpath.as_ptr(), libc::MNT_DETACH) };
-                if ret != 0 {
-                    let errno = std::io::Error::last_os_error();
-                    if errno.raw_os_error() != Some(libc::EINVAL)
-                        && errno.raw_os_error() != Some(libc::ENOENT)
-                    {
-                        log::debug!(
-                            "{}",
-                            t_with_args(
-                                "sysfs-umount2-failed",
-                                &fluent_args!("path" => path_str, "error" => errno.to_string())
-                            )
-                        );
-                    }
+            && let Ok(cpath) = std::ffi::CString::new(path_str)
+        {
+            let ret = unsafe { libc::umount2(cpath.as_ptr(), libc::MNT_DETACH) };
+            if ret != 0 {
+                let errno = std::io::Error::last_os_error();
+                if errno.raw_os_error() != Some(libc::EINVAL)
+                    && errno.raw_os_error() != Some(libc::ENOENT)
+                {
+                    log::debug!(
+                        "{}",
+                        t_with_args(
+                            "sysfs-umount2-failed",
+                            &fluent_args!("path" => path_str, "error" => errno.to_string())
+                        )
+                    );
                 }
             }
+        }
     }
 
     pub fn re_unmount(&self) {
