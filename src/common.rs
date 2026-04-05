@@ -28,6 +28,7 @@ pub enum DaemonEvent {
         pid: i32,
         mode: String,
         temperature: f64,
+        visible_freeform_window: bool,
     },
     /// 高频事件：eBPF 捕获到的底层渲染帧数据
     FrameUpdate {

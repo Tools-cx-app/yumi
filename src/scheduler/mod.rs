@@ -235,11 +235,34 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     },
 
                     // --- 2. 前台模式切换事件 ---
-                    DaemonEvent::ModeChange { package_name, pid, mode, temperature } => {
+                    DaemonEvent::ModeChange { package_name, pid, mode, temperature ,visible_freeform_window} => {
                         let mut current_mode_lock = mode_clone.lock().unwrap();
                         let old_mode = current_mode_lock.clone();
 
-                        if old_mode != mode {
+                        if visible_freeform_window {
+                            if mode =="fas"{
+                                if fas_suspended_at.is_some() {
+                                    fas_controller.reset_all_freqs();
+                                    fas_controller.clear_game();
+                                    fas_controller.policies.clear();
+                                    fas_suspended_at = None;
+                                    fas_suspended_package.clear();
+                                }
+
+                                if old_mode == "fas" && !fas_controller.policies.is_empty() {
+                                    fas_suspended_at = Some(Instant::now());
+                                    fas_suspended_package = package_name.clone();
+                                } else if old_mode == "fas" {
+                                    fas_controller.clear_game();
+                                    fas_controller.policies.clear();
+                                    fas_suspended_at = None;
+                                    fas_suspended_package.clear();
+                                }
+
+                                apply_static_mode(&config_clone, &mode_clone, &sys_path_clone);
+
+                            }
+                        } else if old_mode != mode {
                             log::info!("{}", t_with_args("scheduler-mode-change-request", &fluent_args!(
                                 "old" => old_mode.clone(), "new" => mode.as_str(), "pkg" => package_name.as_str(), "temp" => temperature
                             )));
