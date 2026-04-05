@@ -260,7 +260,8 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                 }
 
                                 apply_static_mode(&config_clone, &mode_clone, &sys_path_clone);
-
+                            }else {
+                                cpu_governor.release();
                             }
                         } else if old_mode != mode {
                             log::info!("{}", t_with_args("scheduler-mode-change-request", &fluent_args!(
