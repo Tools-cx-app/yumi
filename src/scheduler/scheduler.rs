@@ -82,13 +82,15 @@ impl CpuScheduler {
 
     fn apply_cpu_idle_governor(&self) -> Result<()> {
         let config = self.config.read().unwrap();
-        if config.function.cpu_idle_scaling_governor && !config.cpu_idle.current_governor.is_empty()
-            && self.sys_path_exist.cpuidle_governor_exist {
-                let _ = utils::try_write_file(
-                    "/sys/devices/system/cpu/cpuidle/current_governor",
-                    &config.cpu_idle.current_governor,
-                );
-            }
+        if config.function.cpu_idle_scaling_governor
+            && !config.cpu_idle.current_governor.is_empty()
+            && self.sys_path_exist.cpuidle_governor_exist
+        {
+            let _ = utils::try_write_file(
+                "/sys/devices/system/cpu/cpuidle/current_governor",
+                &config.cpu_idle.current_governor,
+            );
+        }
         log::info!("{}", t("apply-cpu-idle-governor-start"));
         Ok(())
     }

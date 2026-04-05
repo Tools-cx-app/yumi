@@ -81,19 +81,20 @@ pub fn init(level_str: &str) -> Result<()> {
 pub fn update_level(level_str: &str) {
     let level = parse_level(level_str);
     if let Some(mutex) = LOG_HANDLE.get()
-        && let Ok(handle) = mutex.lock() {
-            match build_config(level) {
-                Ok(cfg) => {
-                    handle.set_config(cfg);
-                    log::debug!(
-                        "{}",
-                        t_with_args(
-                            "log-level-updated",
-                            &fluent_args!("level" => level.to_string())
-                        )
-                    );
-                }
-                Err(e) => eprintln!("Failed to rebuild logger config: {}", e),
+        && let Ok(handle) = mutex.lock()
+    {
+        match build_config(level) {
+            Ok(cfg) => {
+                handle.set_config(cfg);
+                log::debug!(
+                    "{}",
+                    t_with_args(
+                        "log-level-updated",
+                        &fluent_args!("level" => level.to_string())
+                    )
+                );
             }
+            Err(e) => eprintln!("Failed to rebuild logger config: {}", e),
         }
+    }
 }

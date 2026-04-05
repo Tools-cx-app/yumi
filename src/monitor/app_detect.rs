@@ -336,7 +336,7 @@ pub fn app_detection_loop(
         let config_snapshot = config_arc.lock().unwrap().clone();
         let ignored_apps = config_snapshot.ignored_apps.clone();
 
-        let (detected_pkg, detected_pid, visible_freeform) = get_focused_app(&ignored_apps)
+        let (detected_pkg, detected_pid, visible_freeform_window) = get_focused_app(&ignored_apps)
             .unwrap_or_else(|_| (last_package.clone(), get_current_pid(), false));
 
         let mut final_pkg = last_package.clone();
@@ -366,14 +366,7 @@ pub fn app_detection_loop(
             0.0
         };
 
-        if visible_freeform {
-            pending_package.clear();
-        }
-
-        if (last_package != final_pkg || force_refresh)
-            && !final_pkg.is_empty()
-            && !visible_freeform
-        {
+        if (last_package != final_pkg || force_refresh) && !final_pkg.is_empty() {
             set_current_package(&final_pkg, final_pid);
             // 使用已获取的 config_snapshot，不再重复加锁
             let new_mode = determine_mode(&config_snapshot, &final_pkg);
@@ -392,6 +385,7 @@ pub fn app_detection_loop(
                     pid: final_pid,
                     mode: new_mode.clone(),
                     temperature: current_temp,
+                    visible_freeform_window,
                 });
                 last_mode = new_mode;
             }

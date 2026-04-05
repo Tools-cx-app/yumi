@@ -274,14 +274,15 @@ impl CpuLoadGovernor {
             } else {
                 cluster.down_wait += 1;
                 if cluster.down_wait >= self.cfg.down_rate_limit_ticks
-                    && util < self.cfg.down_threshold {
-                        let active_smoothing_down = if util < 0.10 {
-                            self.cfg.smoothing_down * 2.5
-                        } else {
-                            self.cfg.smoothing_down
-                        };
-                        cluster.current_perf += (target_perf - old_perf) * active_smoothing_down;
-                    }
+                    && util < self.cfg.down_threshold
+                {
+                    let active_smoothing_down = if util < 0.10 {
+                        self.cfg.smoothing_down * 2.5
+                    } else {
+                        self.cfg.smoothing_down
+                    };
+                    cluster.current_perf += (target_perf - old_perf) * active_smoothing_down;
+                }
             }
 
             cluster.current_perf = cluster

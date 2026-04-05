@@ -139,46 +139,47 @@ impl PolicyController {
         if self.verify_timer.elapsed() >= verify_interval {
             self.verify_timer = Instant::now();
             if let Some(expected) = self.verify_freq
-                && let Some(actual) = self.read_current_freq() {
-                    let min_ok = self
-                        .available_freqs
-                        .iter()
-                        .take_while(|&&f| f <= expected)
-                        .last()
-                        .copied()
-                        .unwrap_or(expected);
-                    let max_ok = self
-                        .available_freqs
-                        .iter()
-                        .find(|&&f| f >= expected)
-                        .copied()
-                        .unwrap_or(expected);
-                    if actual < min_ok || actual > max_ok {
-                        warn!(
-                            "{}",
-                            t_with_args(
-                                "fas-freq-mismatch",
-                                &fluent_args!(
-                                    "pid" => self.policy_id.to_string(),
-                                    "min" => min_ok.to_string(),
-                                    "max" => max_ok.to_string(),
-                                    "actual" => actual.to_string()
-                                )
+                && let Some(actual) = self.read_current_freq()
+            {
+                let min_ok = self
+                    .available_freqs
+                    .iter()
+                    .take_while(|&&f| f <= expected)
+                    .last()
+                    .copied()
+                    .unwrap_or(expected);
+                let max_ok = self
+                    .available_freqs
+                    .iter()
+                    .find(|&&f| f >= expected)
+                    .copied()
+                    .unwrap_or(expected);
+                if actual < min_ok || actual > max_ok {
+                    warn!(
+                        "{}",
+                        t_with_args(
+                            "fas-freq-mismatch",
+                            &fluent_args!(
+                                "pid" => self.policy_id.to_string(),
+                                "min" => min_ok.to_string(),
+                                "max" => max_ok.to_string(),
+                                "actual" => actual.to_string()
                             )
-                        );
-                        self.max_writer.re_unmount();
-                        self.min_writer.re_unmount();
-                        self.max_writer.invalidate();
-                        self.min_writer.invalidate();
-                        if write_freq >= actual {
-                            self.max_writer.write_value_force(write_freq);
-                            self.min_writer.write_value_force(write_freq);
-                        } else {
-                            self.min_writer.write_value_force(write_freq);
-                            self.max_writer.write_value_force(write_freq);
-                        }
+                        )
+                    );
+                    self.max_writer.re_unmount();
+                    self.min_writer.re_unmount();
+                    self.max_writer.invalidate();
+                    self.min_writer.invalidate();
+                    if write_freq >= actual {
+                        self.max_writer.write_value_force(write_freq);
+                        self.min_writer.write_value_force(write_freq);
+                    } else {
+                        self.min_writer.write_value_force(write_freq);
+                        self.max_writer.write_value_force(write_freq);
                     }
                 }
+            }
         }
         self.verify_freq = Some(write_freq);
     }
@@ -898,18 +899,19 @@ impl FasController {
                 self.fps_margin = m;
             }
             if let Some(ref gears) = p.target_fps
-                && !gears.is_empty() {
-                    self.fps_gears = gears.clone();
-                    if !self
-                        .fps_gears
-                        .iter()
-                        .any(|&g| (g - self.current_target_fps).abs() < 0.5)
-                    {
-                        self.current_target_fps =
-                            self.fps_gears.iter().copied().fold(60.0_f32, f32::max);
-                    }
-                    self.refresh_cached_values();
+                && !gears.is_empty()
+            {
+                self.fps_gears = gears.clone();
+                if !self
+                    .fps_gears
+                    .iter()
+                    .any(|&g| (g - self.current_target_fps).abs() < 0.5)
+                {
+                    self.current_target_fps =
+                        self.fps_gears.iter().copied().fold(60.0_f32, f32::max);
                 }
+                self.refresh_cached_values();
+            }
             info!(
                 "{}",
                 t_with_args(
@@ -1053,17 +1055,18 @@ impl FasController {
                 }
                 // 更新 target_fps 齿轮列表
                 if let Some(ref gears) = p.target_fps
-                    && !gears.is_empty() {
-                        self.fps_gears = gears.clone();
-                        if !self
-                            .fps_gears
-                            .iter()
-                            .any(|&g| (g - self.current_target_fps).abs() < 0.5)
-                        {
-                            self.current_target_fps =
-                                self.fps_gears.iter().copied().fold(60.0_f32, f32::max);
-                        }
+                    && !gears.is_empty()
+                {
+                    self.fps_gears = gears.clone();
+                    if !self
+                        .fps_gears
+                        .iter()
+                        .any(|&g| (g - self.current_target_fps).abs() < 0.5)
+                    {
+                        self.current_target_fps =
+                            self.fps_gears.iter().copied().fold(60.0_f32, f32::max);
                     }
+                }
             } else {
                 // 无 per-app 配置，用全局 margin
                 if let Ok(m) = new_rules.fps_margin.parse::<f32>() {
@@ -1124,7 +1127,9 @@ impl FasController {
 
     fn apply_freqs(&mut self) {
         self.freq_force_counter = self.freq_force_counter.wrapping_add(1);
-        let force = self.freq_force_counter.is_multiple_of(self.cfg.freq_force_reapply_interval);
+        let force = self
+            .freq_force_counter
+            .is_multiple_of(self.cfg.freq_force_reapply_interval);
 
         let mut effective_perf = self.perf_index.clamp(0.0, 1.0);
 

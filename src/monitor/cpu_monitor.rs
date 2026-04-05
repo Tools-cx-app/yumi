@@ -44,9 +44,10 @@ fn get_thread_tids(pid: u32) -> Vec<u32> {
     if let Ok(entries) = std::fs::read_dir(&task_dir) {
         for entry in entries.flatten() {
             if let Some(name) = entry.file_name().to_str()
-                && let Ok(tid) = name.parse::<u32>() {
-                    tids.push(tid);
-                }
+                && let Ok(tid) = name.parse::<u32>()
+            {
+                tids.push(tid);
+            }
         }
     }
     tids
