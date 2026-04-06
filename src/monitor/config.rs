@@ -145,7 +145,7 @@ pub struct FasRulesConfig {
     #[serde(default = "default_fps_gears")]
     pub fps_gears: Vec<f32>,
     #[serde(default = "default_fps_margin")]
-    pub fps_margin: String,
+    pub fps_margin: f32,
     #[serde(default)]
     pub pid: PidCoefficients,
     #[serde(default = "default_cluster_profiles")]
@@ -252,8 +252,8 @@ pub struct FasRulesConfig {
 pub fn default_fps_gears() -> Vec<f32> {
     vec![30.0, 60.0, 90.0, 120.0, 144.0]
 }
-pub fn default_fps_margin() -> String {
-    "3".to_string()
+pub fn default_fps_margin() -> f32 {
+    3.0
 }
 fn d_auto_cap() -> bool {
     true
