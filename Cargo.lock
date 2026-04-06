@@ -2150,8 +2150,8 @@ dependencies = [
  "nix",
  "once_cell",
  "serde",
- "serde_yaml",
  "tokio",
+ "toml",
 ]
 
 [[package]]

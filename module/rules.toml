@@ -1,0 +1,131 @@
+yumi_scheduler = true
+dynamic_enabled = true
+global_mode = "powersave"
+ignored_apps = ["com.android.systemui"]
+
+[app_modes]
+"com.miHoYo.GenshinImpact" = "fas"
+"com.tencent.tmgp.sgame" = "fas"
+"com.tencent.tmgp.speedmobile" = "fas"
+"com.tencent.lolm" = "fas"
+
+[fas_rules]
+fps_gears = [
+    30.0,
+    60.0,
+    90.0,
+    120.0,
+    144.0,
+]
+fps_margin = 3.0
+auto_capacity_weight = true
+perf_floor = 0.22
+perf_ceil = 1.0
+perf_init = 0.45
+perf_cold_boot = 0.85
+freq_hysteresis = 0.015
+heavy_frame_threshold_ms = 150.0
+loading_cumulative_ms = 2500.0
+loading_normal_tolerance = 3
+loading_perf_floor = 0.6
+loading_perf_ceiling = 0.7
+post_loading_ignore_frames = 5
+post_loading_perf = 0.65
+post_loading_downgrade_guard = 90
+upgrade_confirm_frames = 60
+downgrade_confirm_frames = 90
+upgrade_cooldown_after_downgrade = 90
+gear_dampen_frames = 60
+downgrade_boost_perf_inc = 0.18
+downgrade_boost_duration = 45
+fast_decay_frame_threshold = 75
+fast_decay_perf_threshold = 0.7
+fast_decay_max_step = 0.022
+fast_decay_min_step = 0.004
+jank_cooldown_frames = 15
+max_inc_damped = 0.045
+max_inc_normal = 0.075
+damped_perf_cap = 0.92
+app_switch_gap_ms = 3000.0
+app_switch_resume_perf = 0.6
+freq_force_reapply_interval = 30
+fixed_max_frame_ms = 500.0
+cold_boot_ms = 3500
+
+[fas_rules.per_app_profiles."com.miHoYo.GenshinImpact"]
+target_fps = [
+    30,
+    60,
+]
+fps_margin = 4.0
+
+[fas_rules.per_app_profiles."com.tencent.tmgp.pubgmhd"]
+target_fps = [
+    60,
+    90,
+    120,
+]
+fps_margin = 3.0
+
+[fas_rules.per_app_profiles."com.tencent.tmgp.speedmobile"]
+target_fps = [
+    30,
+    60,
+    120,
+    144,
+]
+fps_margin = 3.0
+
+[fas_rules.per_app_profiles."com.tencent.tmgp.sgame"]
+target_fps = [
+    60,
+    90,
+    120,
+]
+fps_margin = 3.0
+
+[fas_rules.per_app_profiles."com.hypergryph.arknights"]
+target_fps = [
+    30,
+    60,
+]
+
+[fas_rules.per_app_profiles."com.miHoYo.hkrpg"]
+target_fps = [
+    30,
+    60,
+]
+
+[fas_rules.per_app_profiles."com.kurogame.mingchao"]
+target_fps = [
+    24,
+    30,
+    45,
+    60,
+]
+
+[fas_rules.per_app_profiles."com.tencent.lolm"]
+target_fps = [
+    60,
+    90,
+    120,
+    144,
+]
+fps_margin = 3.0
+
+[fas_rules.pid]
+kp = 0.05
+ki = 0.01
+kd = 0.006
+
+[[fas_rules.cluster_profiles]]
+capacity_weight = 1.0
+
+[[fas_rules.cluster_profiles]]
+capacity_weight = 1.5
+
+[[fas_rules.cluster_profiles]]
+capacity_weight = 2.5
+
+[[fas_rules.cluster_profiles]]
+capacity_weight = 3.5

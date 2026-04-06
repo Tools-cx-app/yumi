@@ -53,7 +53,7 @@ pub fn get_cpu_policies() -> Vec<i32> {
 
 pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     let root = common::get_module_root();
-    let config_path = root.join("config/config.yaml");
+    let config_path = root.join("config/config.toml");
     let config_dir = root.join("config");
 
     let config = Config::from_file(config_path.to_str().unwrap()).unwrap_or_default();

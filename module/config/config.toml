@@ -1,0 +1,62 @@
+[meta]
+name = "default_config"
+author = "yuki"
+language = "en"
+loglevel = "INFO"
+
+[function]
+CpuIdleScalingGovernor = false
+IOOptimization = true
+
+[IO_Settings]
+Scheduler = "none"
+read_ahead_kb = "128"
+nomerges = "2"
+iostats = "0"
+
+[CpuIdle]
+current_governor = ""
+
+[powersave.cpu_load_governor]
+up_threshold = 0.85
+down_threshold = 0.6
+smoothing_up = 0.4
+smoothing_down = 0.5
+down_rate_limit_ticks = 2
+headroom_factor = 1.1
+perf_floor = 0.1
+perf_ceil = 0.7
+perf_init = 0.3
+
+[balance.cpu_load_governor]
+up_threshold = 0.8
+down_threshold = 0.5
+smoothing_up = 0.6
+smoothing_down = 0.3
+down_rate_limit_ticks = 3
+headroom_factor = 1.25
+perf_floor = 0.15
+perf_ceil = 1.0
+perf_init = 0.5
+
+[performance.cpu_load_governor]
+up_threshold = 0.65
+down_threshold = 0.4
+smoothing_up = 0.8
+smoothing_down = 0.2
+down_rate_limit_ticks = 5
+headroom_factor = 1.4
+perf_floor = 0.35
+perf_ceil = 1.0
+perf_init = 0.6
+
+[fast.cpu_load_governor]
+up_threshold = 0.01
+down_threshold = 0.01
+smoothing_up = 1.0
+smoothing_down = 0.01
+down_rate_limit_ticks = 10
+headroom_factor = 2.0
+perf_floor = 1.0
+perf_ceil = 1.0
+perf_init = 1.0

@@ -26,7 +26,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 pub fn get_rules_path() -> PathBuf {
-    common::get_module_root().join("rules.yaml")
+    common::get_module_root().join("rules.toml")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -457,7 +457,7 @@ where
         Ok(mut file) => {
             let mut s = String::new();
             file.read_to_string(&mut s)?;
-            serde_yaml::from_str(&s).or_else(|e| {
+            toml::from_str(&s).or_else(|e| {
                 warn!(
                     "[Config] Parse error {}: {}. Default.",
                     path_ref.display(),

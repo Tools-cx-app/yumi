@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(&log_dir)?;
 
     // 2. 提前读取配置
-    let config_path: std::path::PathBuf = root.join("config/config.yaml");
+    let config_path: std::path::PathBuf = root.join("config/config.toml");
     let config = Config::from_file(config_path.to_str().unwrap()).unwrap_or_default();
 
     // 3. 立即加载语言
