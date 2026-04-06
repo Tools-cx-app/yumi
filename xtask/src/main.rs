@@ -62,8 +62,6 @@ fn build() -> Result<()> {
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir)?;
 
-    build_webui()?;
-
     let mut cargo = cargo_ndk();
     let args = vec!["build", "-Z", "build-std", "-r"];
 
@@ -130,16 +128,4 @@ fn cargo_ndk() -> Command {
         .args(["+nightly", "ndk", "--platform", "26", "-t", "arm64-v8a"])
         .env("RUSTFLAGS", "-C default-linker-libraries");
     command
-}
-
-fn build_webui() -> Result<()> {
-    let pnpm = || {
-        let mut command = Command::new("npm");
-        command.current_dir("webui");
-        command
-    };
-
-    pnpm().args(["run", "build"]).spawn()?.wait()?;
-
-    Ok(())
 }
