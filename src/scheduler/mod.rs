@@ -346,7 +346,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     },
 
                     // --- 4. 帧率事件 (eBPF 驱动) ---
-                    DaemonEvent::FrameUpdate { fps: _, frame_delta_ns } => {
+                    DaemonEvent::FrameUpdate {  frame_delta_ns } => {
                         if !is_screen_on { continue; } // 息屏不处理渲染帧
 
                         let current_mode = mode_clone.lock().unwrap().clone();

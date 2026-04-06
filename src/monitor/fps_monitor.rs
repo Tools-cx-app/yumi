@@ -126,7 +126,7 @@ pub async fn start_fps_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
                                 continue;
                             }
 
-                            let fps = 1_000_000_000.0 / (delta as f64);
+                            // let fps = 1_000_000_000.0 / (delta as f64);
 
                             // 不再检查 package_name 或在热路径中做 String clone
                             // FAS 控制器已通过 set_game() 持有自己的包名缓存
@@ -138,7 +138,6 @@ pub async fn start_fps_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error
                             // FrameUpdate 不再携带 package_name，避免 144fps 下每帧一次 String clone
                             if tx_clone
                                 .send(DaemonEvent::FrameUpdate {
-                                    fps: fps as f32,
                                     frame_delta_ns: delta,
                                 })
                                 .is_err()

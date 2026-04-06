@@ -43,24 +43,9 @@ pub fn write_to_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Res
     Ok(())
 }
 
-pub fn write_to_file_no_perm_change<P: AsRef<Path>, C: AsRef<[u8]>>(
-    path: P,
-    content: C,
-) -> Result<()> {
-    fs::write(path.as_ref(), content)?;
-    Ok(())
-}
-
 // 尝试写入内容 (不抛出错误，只记录警告)
 pub fn try_write_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Result<()> {
     if let Err(e) = write_to_file(path.as_ref(), content) {
-        log::warn!("Failed to write to {}: {}.", path.as_ref().display(), e);
-    }
-    Ok(())
-}
-
-pub fn try_write_file_no_perm<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Result<()> {
-    if let Err(e) = write_to_file_no_perm_change(path.as_ref(), content) {
         log::warn!("Failed to write to {}: {}.", path.as_ref().display(), e);
     }
     Ok(())
@@ -118,7 +103,6 @@ pub fn find_cpu_temp_path() -> Result<String> {
             && dir_name.starts_with("thermal_zone")
         {
             let type_path = path.join("type");
-            // 修复 E0532 模式匹配错误: 直接使用 if let Ok(...)
             if let Ok(type_content) = read_file_content(type_path.to_str().unwrap_or_default())
                 && (type_content.contains("soc_max")
                     || type_content.contains("mtktscpu")
