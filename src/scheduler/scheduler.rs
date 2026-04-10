@@ -24,6 +24,7 @@ use anyhow::Result;
 
 use super::{config::Config, utils::SysPathExist};
 use crate::{
+    common::ModeEvent,
     fluent_args,
     i18n::{t, t_with_args},
     utils,
@@ -31,14 +32,14 @@ use crate::{
 
 pub struct CpuScheduler {
     config: Arc<RwLock<Config>>,
-    current_mode_name: Arc<Mutex<String>>,
+    current_mode_name: Arc<Mutex<ModeEvent>>,
     sys_path_exist: Arc<SysPathExist>,
 }
 
 impl CpuScheduler {
     pub fn new(
         config: Arc<RwLock<Config>>,
-        initial_mode: Arc<Mutex<String>>,
+        initial_mode: Arc<Mutex<ModeEvent>>,
         sys_path_exist: Arc<SysPathExist>,
     ) -> Self {
         Self {
@@ -52,7 +53,7 @@ impl CpuScheduler {
     pub fn apply_all_settings(&self) -> Result<()> {
         let mode_name = self.current_mode_name.lock().unwrap().clone();
 
-        if mode_name == "fas" {
+        if mode_name == ModeEvent::Fas {
             log::debug!(
                 "Currently in FAS mode, Scheduler is skipping static settings application."
             );

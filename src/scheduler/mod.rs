@@ -33,7 +33,7 @@ use scheduler::CpuScheduler;
 
 use crate::{
     common,
-    common::DaemonEvent,
+    common::{DaemonEvent, ModeEvent},
     fluent_args,
     i18n::{load_language, t, t_with_args},
     logger, utils,
@@ -64,7 +64,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
     let config = Config::from_file(config_path.to_str().unwrap()).unwrap_or_default();
 
     let shared_config = Arc::new(RwLock::new(config));
-    let shared_mode_name = Arc::new(Mutex::new("balance".to_string()));
+    let shared_mode_name = Arc::new(Mutex::new(ModeEvent::Balance));
     let sys_path_exist = Arc::new(utils::SysPathExist::new());
 
     // ==========================================
@@ -172,24 +172,24 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
             let temp_sensor_path = crate::utils::find_cpu_temp_path().unwrap_or_default();
             let mut last_temp_update = Instant::now();
 
-            let apply_static_mode = |config: &Arc<RwLock<Config>>, mode: &Arc<Mutex<String>>, sys_path: &Arc<utils::SysPathExist>| {
+            let apply_static_mode = |config: &Arc<RwLock<Config>>, mode: &Arc<Mutex<ModeEvent>>, sys_path: &Arc<utils::SysPathExist>| {
                 let scheduler = CpuScheduler::new(config.clone(), mode.clone(), sys_path.clone());
                 if let Err(e) = scheduler.apply_all_settings() { log::error!("{}", t_with_args("scheduler-apply-failed", &fluent_args!("error" => e.to_string()))); }
             };
 
-            let get_clg_cfg = |config: &Config, mode: &str| -> crate::scheduler::config::CpuLoadGovernorConfig {
+            let get_clg_cfg = |config: &Config, mode: &ModeEvent| -> crate::scheduler::config::CpuLoadGovernorConfig {
                 config.get_mode(mode).map(|m| m.cpu_load_governor.clone()).unwrap_or_default()
             };
 
             // 启动时初始化
             {
                 let current_mode = mode_clone.lock().unwrap().clone();
-                if current_mode != "fas" {
+                if current_mode != ModeEvent::Fas {
                     let config_lock = config_clone.read().unwrap();
                     let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
                     if clg_cfg.enabled {
                         cpu_governor.init_policies(&clg_cfg);
-                        log::info!("{}", t_with_args("scheduler-clg-init", &fluent_args!("mode" => current_mode.clone())));
+                        log::info!("{}", t_with_args("scheduler-clg-init", &fluent_args!("mode" => current_mode.as_str())));
                     }
                 }
             }
@@ -205,7 +205,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             log::info!("{}", t("scheduler-doze-enable"));
 
                             // 息屏立刻剥夺 FAS 的频率控制权
-                            if current_mode == "fas" {
+                            if current_mode == ModeEvent::Fas {
                                 fas_controller.reset_all_freqs();
                                 fas_controller.clear_game();
                                 fas_controller.policies.clear();
@@ -215,7 +215,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                             // 强行让 CLG 接管，并动态生成一个极致省电配置
                             let config_lock = config_clone.read().unwrap();
-                            let mut doze_cfg = get_clg_cfg(&config_lock, "powersave");
+                            let mut doze_cfg = get_clg_cfg(&config_lock, &ModeEvent::Powersave);
                             doze_cfg.enabled = true;
                             doze_cfg.perf_floor = 0.0;
                             doze_cfg.perf_ceil = doze_cfg.perf_ceil.min(0.40); // 锁死天花板最高只给 40% 性能
@@ -229,12 +229,12 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                             let config_lock = config_clone.read().unwrap();
                             let clg_cfg = get_clg_cfg(&config_lock, &current_mode);
 
-                            if current_mode != "fas" {
+                            if current_mode != ModeEvent::Fas {
                                 if clg_cfg.enabled { cpu_governor.init_policies(&clg_cfg); }
                                 else { cpu_governor.release(); }
                             } else {
                                 cpu_governor.release();
-                                *mode_clone.lock().unwrap() = String::new();
+                                *mode_clone.lock().unwrap() =ModeEvent::default();
                             }
                         }
                     },
@@ -246,15 +246,15 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
 
                         if old_mode != mode {
                             log::info!("{}", t_with_args("scheduler-mode-change-request", &fluent_args!(
-                                "old" => old_mode.clone(), "new" => mode.as_str(), "pkg" => package_name.as_str(), "temp" => temperature
+                                "old" => old_mode.as_str(), "new" => mode.as_str(), "pkg" => package_name.as_str(), "temp" => temperature
                             )));
 
                             *current_mode_lock = mode.clone();
                             drop(current_mode_lock);
 
-                            let _ = utils::try_write_file(&mode_file_path, mode.as_bytes());
+                            let _ = utils::try_write_file(&mode_file_path, mode.as_str());
 
-                            if mode == "fas" {
+                            if mode == ModeEvent::Fas {
                                 // 进游戏：释放 CLG 控制权，激活 FAS
                                 cpu_governor.release();
 
@@ -284,10 +284,10 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                     fas_suspended_package.clear();
                                 }
 
-                                if old_mode == "fas" && !fas_controller.policies.is_empty() {
+                                if old_mode == ModeEvent::Fas && !fas_controller.policies.is_empty() {
                                     fas_suspended_at = Some(Instant::now());
                                     fas_suspended_package = package_name.clone();
-                                } else if old_mode == "fas" {
+                                } else if old_mode == ModeEvent::Fas {
                                     fas_controller.clear_game();
                                     fas_controller.policies.clear();
                                     fas_suspended_at = None;
@@ -307,7 +307,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                                     }
                                 }
                             }
-                        } else if mode == "fas" {
+                        } else if mode == ModeEvent::Fas {
                             fas_controller.set_temperature(temperature);
                         }
                     },
@@ -316,7 +316,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                     DaemonEvent::SystemLoadUpdate { core_utils, foreground_max_util } => {
                         let current_mode = mode_clone.lock().unwrap().clone();
                         // 仅当亮屏且在 FAS 模式且未挂起时，投喂 FAS
-                        if is_screen_on && current_mode == "fas" && fas_suspended_at.is_none() {
+                        if is_screen_on && current_mode == ModeEvent::Fas && fas_suspended_at.is_none() {
                             fas_controller.update_cpu_util(foreground_max_util);
                             fas_controller.update_core_utils(&core_utils);
                         }
@@ -331,7 +331,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         if !is_screen_on { continue; } // 息屏不处理渲染帧
 
                         let current_mode = mode_clone.lock().unwrap().clone();
-                        if current_mode == "fas" {
+                        if current_mode == ModeEvent::Fas {
                             if !temp_sensor_path.is_empty() && last_temp_update.elapsed().as_secs() >= 3 {
                                 if let Ok(raw) = utils::read_file_content(&temp_sensor_path)&&let Ok(raw_temp)=raw.parse::<f64>() {
                                     fas_controller.set_temperature(raw_temp / 1000.0);
@@ -347,7 +347,7 @@ pub fn start_scheduler_thread(rx: mpsc::Receiver<DaemonEvent>) -> Result<()> {
                         current_rules = new_rules;
                         let current_mode = mode_clone.lock().unwrap().clone();
 
-                        if current_mode == "fas" {
+                        if current_mode == ModeEvent::Fas {
                             if fas_controller.policies.is_empty() {
                                 fas_controller.load_policies(&current_rules.fas_rules);
                             } else {

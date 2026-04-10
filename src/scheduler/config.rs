@@ -17,6 +17,8 @@
 
 use serde::Deserialize;
 
+use crate::common::ModeEvent;
+
 #[derive(Debug, Deserialize, Default)]
 pub struct Meta {
     #[serde(default = "default_loglevel", alias = "Loglevel")]
@@ -196,12 +198,12 @@ impl Config {
         Ok(config)
     }
 
-    pub fn get_mode(&self, mode_name: &str) -> Option<&Mode> {
+    pub fn get_mode(&self, mode_name: &ModeEvent) -> Option<&Mode> {
         match mode_name {
-            "powersave" => Some(&self.powersave),
-            "balance" => Some(&self.balance),
-            "performance" => Some(&self.performance),
-            "fast" => Some(&self.fast),
+            ModeEvent::Powersave => Some(&self.powersave),
+            ModeEvent::Balance => Some(&self.balance),
+            ModeEvent::Performance => Some(&self.performance),
+            ModeEvent::Fast => Some(&self.fast),
             _ => None,
         }
     }

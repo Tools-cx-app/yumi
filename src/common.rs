@@ -17,6 +17,8 @@
 
 use std::{env, path::PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::monitor::config::RulesConfig;
 
 /// 守护进程全局事件总线
@@ -26,7 +28,7 @@ pub enum DaemonEvent {
     ModeChange {
         package_name: String,
         pid: i32,
-        mode: String,
+        mode: ModeEvent,
         temperature: f64,
     },
     /// 高频事件：eBPF 捕获到的底层渲染帧数据
@@ -44,6 +46,29 @@ pub enum DaemonEvent {
     ConfigReload(RulesConfig),
 
     ScreenStateChange(bool),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq, PartialOrd)]
+#[serde(rename_all = "lowercase")]
+pub enum ModeEvent {
+    #[default]
+    Powersave,
+    Balance,
+    Performance,
+    Fast,
+    Fas,
+}
+
+impl ModeEvent {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Powersave => "powersave",
+            Self::Balance => "balance",
+            Self::Performance => "performance",
+            Self::Fast => "fast",
+            Self::Fas => "fas",
+        }
+    }
 }
 
 /// 获取模块根目录的绝对路径

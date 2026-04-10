@@ -20,7 +20,7 @@ use std::{collections::HashMap, error::Error, fs::File, io::Read, path::PathBuf}
 use log::warn;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::common;
+use crate::common::{self, ModeEvent};
 
 pub fn get_rules_path() -> PathBuf {
     common::get_module_root().join("rules.toml")
@@ -436,8 +436,8 @@ pub struct RulesConfig {
     #[serde(default = "default_true")]
     pub yumi_scheduler: bool,
     pub dynamic_enabled: bool,
-    pub global_mode: String,
-    pub app_modes: HashMap<String, String>,
+    pub global_mode: ModeEvent,
+    pub app_modes: HashMap<String, ModeEvent>,
     #[serde(default)]
     pub ignored_apps: Vec<String>,
     #[serde(default)]

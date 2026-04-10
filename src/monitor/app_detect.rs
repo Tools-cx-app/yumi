@@ -34,7 +34,7 @@ use log::{debug, info, warn};
 
 use super::config::{self, RulesConfig};
 use crate::{
-    common::DaemonEvent,
+    common::{DaemonEvent, ModeEvent},
     fluent_args,
     i18n::{t, t_with_args},
     utils,
@@ -207,7 +207,7 @@ fn get_focused_app(ignored_apps: &[String]) -> Result<(String, i32), Box<dyn Err
 
 // ==================== [辅助函数] ====================
 
-fn determine_mode(config: &RulesConfig, current_package: &str) -> String {
+fn determine_mode(config: &RulesConfig, current_package: &str) -> ModeEvent {
     if !config.dynamic_enabled {
         return config.global_mode.clone();
     }
@@ -222,7 +222,7 @@ pub fn get_default_rules() -> RulesConfig {
     RulesConfig {
         yumi_scheduler: true,
         dynamic_enabled: true,
-        global_mode: "balance".to_string(),
+        global_mode: ModeEvent::Balance,
         app_modes: HashMap::new(),
         ignored_apps: Vec::new(),
         fas_rules: super::config::FasRulesConfig::default(),
@@ -296,7 +296,7 @@ pub fn app_detection_loop(
 
     let temp_sensor_path = utils::find_cpu_temp_path().unwrap_or_default();
     let mut last_package = String::new();
-    let mut last_mode = String::new();
+    let mut last_mode: Option<ModeEvent> = None;
     let mut last_screen_state = true;
 
     // 状态机变量：用于无阻塞防抖
@@ -322,7 +322,7 @@ pub fn app_detection_loop(
             if current_screen_state {
                 last_package.clear();
                 pending_package.clear();
-                last_mode.clear();
+                last_mode = None;
                 force_refresh_arc.store(true, Ordering::SeqCst);
             }
         }
@@ -371,22 +371,24 @@ pub fn app_detection_loop(
             // 使用已获取的 config_snapshot，不再重复加锁
             let new_mode = determine_mode(&config_snapshot, &final_pkg);
 
-            if last_mode != new_mode || force_refresh {
-                info!(
-                    "{}",
-                    t_with_args(
-                        "app-detect-mode-change-pkg",
-                        &fluent_args!("old" => last_mode.clone(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())
-                    )
-                );
-                // ModeChange 事件现在携带 pid 字段
-                let _ = tx.send(DaemonEvent::ModeChange {
-                    package_name: final_pkg.clone(),
-                    pid: final_pid,
-                    mode: new_mode.clone(),
-                    temperature: current_temp,
-                });
-                last_mode = new_mode;
+            if let Some(ref last_mode_clone) = last_mode {
+                if *last_mode_clone != new_mode || force_refresh {
+                    info!(
+                        "{}",
+                        t_with_args(
+                            "app-detect-mode-change-pkg",
+                            &fluent_args!("old" => last_mode.unwrap().as_str(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())
+                        )
+                    );
+                    // ModeChange 事件现在携带 pid 字段
+                    let _ = tx.send(DaemonEvent::ModeChange {
+                        package_name: final_pkg.clone(),
+                        pid: final_pid,
+                        mode: new_mode.clone(),
+                        temperature: current_temp,
+                    });
+                    last_mode = Some(new_mode);
+                }
             }
             last_package = final_pkg;
         }
