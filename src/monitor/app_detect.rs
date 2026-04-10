@@ -92,21 +92,14 @@ fn set_current_package(pkg: &str, pid: i32) {
 
 #[derive(Default)]
 struct WindowsInfo {
-    pub visible_freeform_window: bool,
-    pub pid: i32,
+    pid: i32,
 }
 
 impl WindowsInfo {
-    pub fn new(dump: &str) -> Self {
+    fn new(dump: &str) -> Self {
         let pid = Self::parse_top_app(dump);
-        let visible_freeform_window = dump.contains("freeform")
-            || dump.contains("FlexibleTaskCaptionView")
-            || dump.contains("FlexibleTaskIndicatorView");
 
-        Self {
-            visible_freeform_window,
-            pid,
-        }
+        Self { pid }
     }
 
     fn parse_top_app(dump: &str) -> i32 {
@@ -186,7 +179,7 @@ impl WindowsInfo {
     }
 }
 
-fn get_focused_app(ignored_apps: &[String]) -> Result<(String, i32, bool), Box<dyn Error>> {
+fn get_focused_app(ignored_apps: &[String]) -> Result<(String, i32), Box<dyn Error>> {
     let mut dumper = loop {
         match Dumpsys::new() {
             Ok(b) => break b,
@@ -199,7 +192,7 @@ fn get_focused_app(ignored_apps: &[String]) -> Result<(String, i32, bool), Box<d
     let pkg = utils::get_process_name(info.pid)?;
 
     if ignored_apps.iter().any(|s| s != &pkg) || !IME_BLOCKLIST.contains(&pkg) {
-        Ok((pkg, info.pid, info.visible_freeform_window))
+        Ok((pkg, info.pid))
     } else {
         Err("No valid app found".into())
     }
@@ -336,8 +329,8 @@ pub fn app_detection_loop(
         let config_snapshot = config_arc.lock().unwrap().clone();
         let ignored_apps = config_snapshot.ignored_apps.clone();
 
-        let (detected_pkg, detected_pid, visible_freeform_window) = get_focused_app(&ignored_apps)
-            .unwrap_or_else(|_| (last_package.clone(), get_current_pid(), false));
+        let (detected_pkg, detected_pid) = get_focused_app(&ignored_apps)
+            .unwrap_or_else(|_| (last_package.clone(), get_current_pid()));
 
         let mut final_pkg = last_package.clone();
         let mut final_pid = get_current_pid();
@@ -385,7 +378,6 @@ pub fn app_detection_loop(
                     pid: final_pid,
                     mode: new_mode.clone(),
                     temperature: current_temp,
-                    visible_freeform_window,
                 });
                 last_mode = new_mode;
             }
