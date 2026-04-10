@@ -17,7 +17,7 @@
 
 use crate::monitor::config::{ClusterProfile, FasRulesConfig, PerAppProfile};
 use crate::utils::FastWriter;
-use log::{info, warn};
+use log::{debug, info, trace, warn};
 use std::fs;
 use std::time::Instant;
 
@@ -825,7 +825,7 @@ impl FasController {
         // 齿轮切换后清除 jank 保护（新档位有自己的 perf 基线）
         self.post_jank_perf_floor = 0.0;
         self.post_jank_guard_frames = 0;
-        info!(
+        debug!(
             "{}",
             t_with_args(
                 "fas-gear-switch",
@@ -963,7 +963,7 @@ impl FasController {
         for p in &mut self.policies {
             if p.policy_id == policy_id {
                 p.ignore_write = ignore;
-                info!(
+                warn!(
                     "{}",
                     t_with_args(
                         "fas-ignore-write",
@@ -1028,7 +1028,7 @@ impl FasController {
         {
             self.pid
                 .update_coefficients(new_rules.pid.kp, new_rules.pid.ki, new_rules.pid.kd);
-            info!(
+            debug!(
                 "{}",
                 t_with_args(
                     "fas-pid-reloaded",
@@ -1205,9 +1205,9 @@ impl FasController {
 
         let auto_w = if fas_rules.auto_capacity_weight {
             auto_compute_capacity_weights(&clusters).inspect(|w| {
-                info!("{}", t("fas-auto-capacity"));
+                debug!("{}", t("fas-auto-capacity"));
                 for &(pid, wt) in w {
-                    info!(
+                    debug!(
                         "{}",
                         t_with_args(
                             "fas-auto-capacity-core",
@@ -1288,7 +1288,7 @@ impl FasController {
                         .unwrap_or_default()
                 });
 
-            info!(
+            debug!(
                 "{}",
                 t_with_args(
                     "fas-policy-init",
@@ -1323,7 +1323,7 @@ impl FasController {
         self.temp_threshold = fas_rules.core_temp_threshold;
         self.apply_freqs();
 
-        info!(
+        debug!(
             "{}",
             t_with_args(
                 "fas-init-summary",
@@ -1524,7 +1524,7 @@ impl FasController {
                     if self.upgrade_confirm_frames >= confirm {
                         self.consecutive_downgrade_count = 0;
                         self.stable_gear_frames = 0;
-                        info!(
+                        debug!(
                             "{}",
                             t_with_args(
                                 "fas-low-perf-upgrade",
@@ -1583,7 +1583,7 @@ impl FasController {
                     self.downgrade_boost_remaining = scaled_duration;
                     self.downgrade_boost_perf_saved = self.perf_index;
                     self.perf_index = (self.perf_index + boost_inc).min(0.90);
-                    info!(
+                    debug!(
                         "{}",
                         t_with_args(
                             "fas-downgrade-boost",
@@ -1818,7 +1818,7 @@ impl FasController {
                 self.pid.reset();
                 self.floor_stuck_frames = 0;
                 act = "floor-rescue";
-                info!(
+                debug!(
                     "{}",
                     t_with_args(
                         "fas-floor-rescue",
@@ -2030,7 +2030,7 @@ impl FasController {
             let eff_target = self.effective_target_fps();
             let ema_err = 1000.0 / (eff_target - self.fps_margin).max(1.0) - self.ema_actual_ms;
             let inst_err = 1000.0 / eff_target.max(1.0) - actual_ms;
-            info!(
+            trace!(
                 "{}",
                 t_with_args(
                     "fas-tick-log",
