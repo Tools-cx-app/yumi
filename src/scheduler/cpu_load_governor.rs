@@ -123,17 +123,11 @@ impl CpuLoadGovernor {
         let clusters = crate::scheduler::get_cpu_policies();
 
         for pid in clusters {
-            if self.cfg.perf_init >= 0.50
-                && self.cfg.perf_floor >= 0.30
-                && self.cfg.perf_ceil >= 1.0
-                && self.cfg.headroom_factor >= 1.30
-            {
-                let gov_path = format!(
-                    "/sys/devices/system/cpu/cpufreq/policy{}/scaling_governor",
-                    pid
-                );
-                let _ = crate::utils::try_write_file(&gov_path, "performance");
-            }
+            let gov_path = format!(
+                "/sys/devices/system/cpu/cpufreq/policy{}/scaling_governor",
+                pid
+            );
+            let _ = crate::utils::try_write_file(&gov_path, "performance");
 
             let freq_path = format!(
                 "/sys/devices/system/cpu/cpufreq/policy{}/scaling_available_frequencies",
