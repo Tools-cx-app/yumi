@@ -15,12 +15,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use std::{
+    error::Error,
+    sync::{Arc, Mutex, atomic::AtomicBool, mpsc::Sender},
+    thread,
+};
+
 use log::{error, info};
-use std::error::Error;
-use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
-use std::thread;
 
 pub mod app_detect;
 pub mod config;
@@ -28,9 +29,11 @@ pub mod cpu_monitor;
 pub mod fps_monitor;
 pub mod screen_detect;
 
-use crate::common::DaemonEvent;
-use crate::fluent_args;
-use crate::i18n::{t, t_with_args};
+use crate::{
+    common::DaemonEvent,
+    fluent_args,
+    i18n::{t, t_with_args},
+};
 
 // 启动函数
 pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
@@ -46,7 +49,7 @@ pub fn start_monitor(tx: Sender<DaemonEvent>) -> Result<(), Box<dyn Error>> {
             log::warn!("{}", t("monitor-rlimit-memlock-failed"));
         }
     }
-    
+
     // --- 初始化共享配置 ---
     let rules_path = config::get_rules_path();
 

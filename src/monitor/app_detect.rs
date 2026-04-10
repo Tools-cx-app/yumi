@@ -15,23 +15,30 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    process::Command,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicI32, Ordering},
+        mpsc::Sender,
+    },
+    thread,
+    time::{Duration, Instant},
+};
+
 use dumpsys_rs::Dumpsys;
 use inotify::{Inotify, WatchMask};
 use log::{debug, info, warn};
-use std::collections::{HashMap, HashSet};
-use std::error::Error;
-use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
-use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
 
 use super::config::{self, RulesConfig};
-use crate::common::DaemonEvent;
-use crate::fluent_args;
-use crate::i18n::{t, t_with_args};
-use crate::utils;
+use crate::{
+    common::DaemonEvent,
+    fluent_args,
+    i18n::{t, t_with_args},
+    utils,
+};
 
 static CURRENT_PID: AtomicI32 = AtomicI32::new(0);
 

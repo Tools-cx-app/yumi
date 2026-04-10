@@ -15,15 +15,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::common;
+use std::{collections::HashMap, error::Error, fs::File, io::Read, path::PathBuf};
+
 use log::warn;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::error::Error;
-use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+
+use crate::common;
 
 pub fn get_rules_path() -> PathBuf {
     common::get_module_root().join("rules.toml")

@@ -15,9 +15,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use std::{env, path::PathBuf};
+
 use crate::monitor::config::RulesConfig;
-use std::env;
-use std::path::PathBuf;
 
 /// 守护进程全局事件总线
 #[derive(Debug, Clone)]

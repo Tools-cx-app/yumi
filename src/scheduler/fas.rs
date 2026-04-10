@@ -15,14 +15,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::monitor::config::{ClusterProfile, FasRulesConfig, PerAppProfile};
-use crate::utils::FastWriter;
-use log::{debug, info, trace, warn};
-use std::fs;
-use std::time::Instant;
+use std::{fs, time::Instant};
 
-use crate::fluent_args;
-use crate::i18n::{t, t_with_args};
+use log::{debug, info, trace, warn};
+
+use crate::{
+    fluent_args,
+    i18n::{t, t_with_args},
+    monitor::config::{ClusterProfile, FasRulesConfig, PerAppProfile},
+    utils::FastWriter,
+};
 
 // ════════════════════════════════════════════════════════════════
 //  PolicyController — 单个 cpufreq policy 的频率控制

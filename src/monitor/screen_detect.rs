@@ -15,19 +15,24 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use std::{
+    error::Error,
+    fs::File,
+    io::Read,
+    process,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
+
 use kobject_uevent::{ActionType, UEvent};
 use log::info;
 use netlink_sys::{Socket, SocketAddr, protocols::NETLINK_KOBJECT_UEVENT};
-use std::error::Error;
-use std::fs::File;
-use std::io::Read;
-use std::process;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
 
-use crate::fluent_args;
-use crate::i18n::{t, t_with_args};
+use crate::{
+    fluent_args,
+    i18n::{t, t_with_args},
+};
 
 fn read_int_file(path: &str) -> Result<i32, Box<dyn Error>> {
     let mut content = String::new();

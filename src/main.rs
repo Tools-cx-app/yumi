@@ -21,12 +21,15 @@ mod logger;
 mod monitor;
 mod scheduler;
 pub mod utils;
-use crate::i18n::{load_language, t, t_with_args};
-use crate::scheduler::config::Config;
+use std::{sync::mpsc, thread};
+
 use anyhow::Result;
 use log::{error, info};
-use std::sync::mpsc;
-use std::thread;
+
+use crate::{
+    i18n::{load_language, t, t_with_args},
+    scheduler::config::Config,
+};
 
 fn main() -> Result<()> {
     // 1. 环境初始化

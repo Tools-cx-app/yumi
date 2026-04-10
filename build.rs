@@ -1,6 +1,4 @@
-use std::env;
-use std::path::Path;
-use std::process::Command;
+use std::{env, path::Path, process::Command};
 
 fn compile_bpf(src_name: &str, obj_name: &str, out_dir: &Path) -> std::path::PathBuf {
     let bpf_src = format!("src/bpf/{}", src_name);

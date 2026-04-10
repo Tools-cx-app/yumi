@@ -15,17 +15,19 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+};
+
 use anyhow::Result;
 use inotify::{Inotify, WatchMask};
 use log;
 use nix::unistd::{AccessFlags, access};
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
 
-use crate::fluent_args;
-use crate::i18n::t_with_args;
+use crate::{fluent_args, i18n::t_with_args};
 
 /// 向文件写入内容，并处理可能的错误
 pub fn write_to_file<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, content: C) -> Result<()> {

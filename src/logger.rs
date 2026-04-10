@@ -15,20 +15,24 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::common;
-use crate::fluent_args;
-use crate::i18n::t_with_args;
+use std::sync::Mutex;
+
 use anyhow::{Result, anyhow};
 use log::LevelFilter;
-use log4rs::Handle;
-use log4rs::append::rolling_file::RollingFileAppender;
-use log4rs::append::rolling_file::policy::compound::CompoundPolicy;
-use log4rs::append::rolling_file::policy::compound::roll::fixed_window::FixedWindowRoller;
-use log4rs::append::rolling_file::policy::compound::trigger::size::SizeTrigger;
-use log4rs::config::{Appender, Config, Root};
-use log4rs::encode::pattern::PatternEncoder;
+use log4rs::{
+    Handle,
+    append::rolling_file::{
+        RollingFileAppender,
+        policy::compound::{
+            CompoundPolicy, roll::fixed_window::FixedWindowRoller, trigger::size::SizeTrigger,
+        },
+    },
+    config::{Appender, Config, Root},
+    encode::pattern::PatternEncoder,
+};
 use once_cell::sync::OnceCell;
-use std::sync::Mutex;
+
+use crate::{common, fluent_args, i18n::t_with_args};
 
 static LOG_HANDLE: OnceCell<Mutex<Handle>> = OnceCell::new();
 

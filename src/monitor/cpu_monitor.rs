@@ -15,18 +15,26 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::common::DaemonEvent;
-use crate::monitor::app_detect;
-use aya::maps::{HashMap as BpfHashMap, PerCpuArray};
-use aya::util::online_cpus;
-use aya::{Ebpf, include_bytes_aligned, programs::TracePoint};
-use log::{debug, info, warn};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc::Sender;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
+    mpsc::Sender,
+};
 
-use crate::fluent_args;
-use crate::i18n::{t, t_with_args};
+use aya::{
+    Ebpf, include_bytes_aligned,
+    maps::{HashMap as BpfHashMap, PerCpuArray},
+    programs::TracePoint,
+    util::online_cpus,
+};
+use log::{debug, info, warn};
+
+use crate::{
+    common::DaemonEvent,
+    fluent_args,
+    i18n::{t, t_with_args},
+    monitor::app_detect,
+};
 
 /// 获取与 BPF ktime_get_ns() 绝对对齐的单调时钟时间 (纳秒)
 fn get_ktime_ns() -> u64 {

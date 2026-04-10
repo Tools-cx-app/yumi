@@ -15,18 +15,25 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::common::DaemonEvent;
-use crate::monitor::app_detect;
-use aya::util::online_cpus;
-use aya::{Ebpf, include_bytes_aligned, maps::perf::AsyncPerfEventArray, programs::UProbe};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, Ordering},
+    mpsc::Sender,
+};
+
+use aya::{
+    Ebpf, include_bytes_aligned, maps::perf::AsyncPerfEventArray, programs::UProbe,
+    util::online_cpus,
+};
 use bytes::BytesMut;
 use log::{debug, info};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc::Sender;
 
-use crate::fluent_args;
-use crate::i18n::{t, t_with_args};
+use crate::{
+    common::DaemonEvent,
+    fluent_args,
+    i18n::{t, t_with_args},
+    monitor::app_detect,
+};
 
 pub async fn start_fps_loop(tx: Sender<DaemonEvent>) -> Result<(), anyhow::Error> {
     static BPF_DATA: &[u8] = include_bytes_aligned!(env!("BPF_FPS_OBJ_PATH"));

@@ -15,15 +15,19 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::config::Config;
-use super::utils::SysPathExist;
-use anyhow::Result;
-use std::fs;
-use std::sync::{Arc, Mutex, RwLock};
+use std::{
+    fs,
+    sync::{Arc, Mutex, RwLock},
+};
 
-use crate::fluent_args;
-use crate::i18n::{t, t_with_args};
-use crate::utils;
+use anyhow::Result;
+
+use super::{config::Config, utils::SysPathExist};
+use crate::{
+    fluent_args,
+    i18n::{t, t_with_args},
+    utils,
+};
 
 pub struct CpuScheduler {
     config: Arc<RwLock<Config>>,

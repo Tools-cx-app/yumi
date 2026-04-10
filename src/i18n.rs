@@ -15,13 +15,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::common;
-use fluent::bundle::FluentBundle;
-use fluent::{FluentArgs, FluentResource};
+use std::{fs, sync::RwLock};
+
+use fluent::{FluentArgs, FluentResource, bundle::FluentBundle};
 use intl_memoizer::concurrent::IntlLangMemoizer;
 use once_cell::sync::Lazy;
-use std::fs;
-use std::sync::RwLock;
+
+use crate::common;
 
 // 全局静态变量，存储当前的语言包
 static BUNDLE: Lazy<RwLock<FluentBundle<FluentResource, IntlLangMemoizer>>> = Lazy::new(|| {

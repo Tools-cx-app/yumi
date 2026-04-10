@@ -15,24 +15,29 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use std::{
+    sync::{Arc, Mutex, RwLock, mpsc},
+    thread,
+    time::Instant,
+};
+
 use anyhow::Result;
-use std::sync::{Arc, Mutex, RwLock, mpsc};
-use std::thread;
-use std::time::Instant;
 
 pub mod config;
 pub mod cpu_load_governor;
 pub mod fas;
 pub mod scheduler;
 
-use crate::common;
-use crate::common::DaemonEvent;
-use crate::fluent_args;
-use crate::i18n::{load_language, t, t_with_args};
-use crate::logger;
-use crate::utils;
 use config::Config;
 use scheduler::CpuScheduler;
+
+use crate::{
+    common,
+    common::DaemonEvent,
+    fluent_args,
+    i18n::{load_language, t, t_with_args},
+    logger, utils,
+};
 
 // 动态获取系统中实际可用的 CPU Policy
 pub fn get_cpu_policies() -> Vec<i32> {

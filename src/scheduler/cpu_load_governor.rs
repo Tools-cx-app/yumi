@@ -15,13 +15,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::scheduler::config::CpuLoadGovernorConfig;
-use crate::utils::FastWriter;
-use log::{debug, info, warn};
 use std::fs;
 
-use crate::fluent_args;
-use crate::i18n::{t, t_with_args};
+use log::{debug, info, warn};
+
+use crate::{
+    fluent_args,
+    i18n::{t, t_with_args},
+    scheduler::config::CpuLoadGovernorConfig,
+    utils::FastWriter,
+};
 
 // ════════════════════════════════════════════════════════════════
 //  ClusterState — 单 cluster 运行时状态
