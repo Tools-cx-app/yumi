@@ -296,7 +296,7 @@ pub fn app_detection_loop(
 
     let temp_sensor_path = utils::find_cpu_temp_path().unwrap_or_default();
     let mut last_package = String::new();
-    let mut last_mode: Option<ModeEvent> = None;
+    let mut last_mode = None;
     let mut last_screen_state = true;
 
     // 状态机变量：用于无阻塞防抖
@@ -371,25 +371,24 @@ pub fn app_detection_loop(
             // 使用已获取的 config_snapshot，不再重复加锁
             let new_mode = determine_mode(&config_snapshot, &final_pkg);
 
-            if let Some(ref last_mode_clone) = last_mode {
-                if *last_mode_clone != new_mode || force_refresh {
-                    info!(
-                        "{}",
-                        t_with_args(
-                            "app-detect-mode-change-pkg",
-                            &fluent_args!("old" => last_mode.unwrap().as_str(), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())
-                        )
-                    );
-                    // ModeChange 事件现在携带 pid 字段
-                    let _ = tx.send(DaemonEvent::ModeChange {
-                        package_name: final_pkg.clone(),
-                        pid: final_pid,
-                        mode: new_mode.clone(),
-                        temperature: current_temp,
-                    });
-                    last_mode = Some(new_mode);
-                }
+            if last_mode.as_ref() != Some(&new_mode) || force_refresh {
+                info!(
+                    "{}",
+                    t_with_args(
+                        "app-detect-mode-change-pkg",
+                        &fluent_args!("old" => last_mode.as_ref().map(|s|s.as_str()).unwrap_or("unknown"), "new" => new_mode.as_str(), "pkg" => final_pkg.as_str())
+                    )
+                );
+                // ModeChange 事件现在携带 pid 字段
+                let _ = tx.send(DaemonEvent::ModeChange {
+                    package_name: final_pkg.clone(),
+                    pid: final_pid,
+                    mode: new_mode.clone(),
+                    temperature: current_temp,
+                });
+                last_mode = Some(new_mode);
             }
+
             last_package = final_pkg;
         }
 
