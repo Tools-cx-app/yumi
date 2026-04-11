@@ -17,7 +17,7 @@
 
 use std::fs;
 
-use log::{debug, info, warn};
+use log::{debug, trace, warn};
 
 use crate::{
     fluent_args,
@@ -205,7 +205,7 @@ impl CpuLoadGovernor {
             cluster.min_writer.write_value_force(init_freq);
             cluster.current_freq = init_freq;
 
-            info!(
+            trace!(
                 "{}",
                 t_with_args(
                     "clg-init",
@@ -225,7 +225,7 @@ impl CpuLoadGovernor {
 
         self.active = !self.clusters.is_empty();
         if self.active {
-            info!(
+            debug!(
                 "{}",
                 t_with_args(
                     "clg-activated",
@@ -239,7 +239,7 @@ impl CpuLoadGovernor {
 
     pub fn release(&mut self) {
         if self.active {
-            info!("{}", t("clg-deactivated"));
+            debug!("{}", t("clg-deactivated"));
         }
         self.clusters.clear();
         self.active = false;
